@@ -1,0 +1,38 @@
+# Container images (large binary, rebuild locally)
+*.sif
+
+# Apptainer cache
+.apptainer/
+
+# Temporary files
+*.tmp
+*.log
+
+# Editor files
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# NFS stale handles
+.nfs*
+
+# Python
+__pycache__/
+*.pyc
+
+
+# Generated config (from template)
+config/opencode_config.json
+
+# Generated workspace instruction files
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+
+# Hive-One docs (contains auth tokens)
+HIVE-ONE-PUBLIC.md

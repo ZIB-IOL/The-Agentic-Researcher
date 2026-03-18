@@ -1,0 +1,153 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%post
+    # Basic setup + CLI utilities
+    apt-get update && apt-get install -y \
+        --no-install-recommends \
+        curl \
+        git \
+        git-lfs \
+        ca-certificates \
+        build-essential \
+        jq \
+        ripgrep \
+        chktex \
+        python3 \
+        unzip \
+        xz-utils \
+        && rm -rf /var/lib/apt/lists/*
+
+    arch="$(dpkg --print-architecture)"
+    case "$arch" in
+        amd64)
+            node_arch="x64"
+            julia_dir_arch="x64"
+            julia_arch="x86_64"
+            yq_arch="amd64"
+            gh_arch="amd64"
+            ;;
+        arm64)
+            node_arch="arm64"
+            julia_dir_arch="aarch64"
+            julia_arch="aarch64"
+            yq_arch="arm64"
+            gh_arch="arm64"
+            ;;
+        *)
+            echo "Unsupported architecture: $arch" >&2
+            exit 1
+            ;;
+    esac
+
+    NODE_VERSION="$(curl -fsSL https://nodejs.org/dist/index.json | jq -r --arg node_arch "$node_arch" 'map(select(.files | index("linux-" + $node_arch))) | .[0].version')"
+    curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-${node_arch}.tar.xz" -o /tmp/node.tar.xz
+    mkdir -p /opt/node
+    tar --no-same-owner -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
+    ln -sf /opt/node/bin/node /usr/local/bin/node
+    ln -sf /opt/node/bin/npm /usr/local/bin/npm
+    ln -sf /opt/node/bin/npx /usr/local/bin/npx
+    rm -f /tmp/node.tar.xz
+
+    JULIA_VERSION=1.12.4
+    curl -fsSL "https://julialang-s3.julialang.org/bin/linux/${julia_dir_arch}/${JULIA_VERSION%.*}/julia-${JULIA_VERSION}-linux-${julia_arch}.tar.gz" -o /tmp/julia.tar.gz
+    tar --no-same-owner -xzf /tmp/julia.tar.gz -C /opt
+    ln -sf "/opt/julia-${JULIA_VERSION}/bin/julia" /usr/local/bin/julia
+    rm -f /tmp/julia.tar.gz
+
+    curl -fsSL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${yq_arch}" -o /usr/local/bin/yq
+    chmod +x /usr/local/bin/yq
+
+    GH_VERSION="$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | jq -r '.tag_name | ltrimstr("v")')"
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gh_arch}.tar.gz" -o /tmp/gh.tar.gz
+    tar --no-same-owner -xzf /tmp/gh.tar.gz -C /tmp
+    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${gh_arch}/bin/gh" /usr/local/bin/gh
+    rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_${gh_arch}"
+
+    curl -LsSf https://astral.sh/uv/install.sh \
+        | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh
+
+    curl -fsSL https://bun.sh/install | bash
+    install -m 0755 /root/.bun/bin/bun /usr/local/bin/bun
+
+    npm install -g \
+        "@anthropic-ai/claude-code" \
+        "opencode-ai" \
+        "@google/gemini-cli" \
+        "@openai/codex" \
+        && npm cache clean --force
+
+    # Cleanup
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH="/opt/node/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%runscript
+    # Create symlinks at runtime so tools find their binaries at the "native" install paths.
+    # --home creates a fresh overlay that hides anything baked into the SIF,
+    # so symlinks must be created here, not in %post.
+    mkdir -p "$HOME/.local/bin" 2>/dev/null
+    ln -sf /usr/local/bin/claude "$HOME/.local/bin/claude" 2>/dev/null
+    ln -sf /usr/local/bin/gemini "$HOME/.local/bin/gemini" 2>/dev/null
+    ln -sf /usr/local/bin/codex "$HOME/.local/bin/codex" 2>/dev/null
+    mkdir -p "$HOME/.opencode/bin" 2>/dev/null
+    ln -sf /usr/local/bin/opencode "$HOME/.opencode/bin/opencode" 2>/dev/null
+
+    # Multi-tool runscript: check SANDBOX_TOOL env var
+    case "${SANDBOX_TOOL:-claude}" in
+        claude)   exec claude "$@" ;;
+        opencode) exec opencode "$@" ;;
+        gemini)   exec gemini "$@" ;;
+        codex)    exec codex "$@" ;;
+        *)        echo "Unknown tool: $SANDBOX_TOOL"; exit 1 ;;
+    esac
+
+%test
+    export HOME=/tmp/agentic-researcher-test-home
+    export XDG_CONFIG_HOME="$HOME/.config"
+    export XDG_CACHE_HOME="$HOME/.cache"
+    export XDG_DATA_HOME="$HOME/.local/share"
+    export XDG_STATE_HOME="$HOME/.local/state"
+    export JULIA_DEPOT_PATH="$HOME/.julia"
+    mkdir -p \
+        "$XDG_CONFIG_HOME/opencode/commands" \
+        "$XDG_CACHE_HOME" \
+        "$XDG_DATA_HOME/opencode" \
+        "$XDG_STATE_HOME" \
+        "$HOME/.local/bin" \
+        "$HOME/.gemini/commands" \
+        "$HOME/.gemini/skills" \
+        "$HOME/.gemini/agents" \
+        "$HOME/.gemini/history" \
+        "$HOME/.gemini/tmp/bin" \
+        "$HOME/.codex" \
+        "$HOME/.opencode/bin" \
+        "$HOME/.claude"
+    printf '{\n  "projects": {}\n}\n' > "$HOME/.gemini/projects.json"
+    printf '{}\n' > "$HOME/.gemini/settings.json"
+    ln -sf /usr/local/bin/claude "$HOME/.local/bin/claude"
+    ln -sf /usr/local/bin/gemini "$HOME/.local/bin/gemini"
+    ln -sf /usr/local/bin/codex "$HOME/.local/bin/codex"
+    ln -sf /usr/local/bin/opencode "$HOME/.opencode/bin/opencode"
+    claude --version
+    opencode --version
+    gemini --version
+    codex --version
+    uv --version
+    git --version
+    gh --version
+    jq --version
+    rg --version
+    yq --version
+    node --version
+    bun --version
+    julia --version
+
+%labels
+    Author mzimmer
+    Version v3.0.0
+    Description Agentic Researcher - Sandboxed AI research environment with multi-tool support

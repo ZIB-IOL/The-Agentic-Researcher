@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "provider": {
+    "custom": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Custom Provider",
+      "options": {
+        "baseURL": "__AR_CUSTOM_ENDPOINT__",
+        "apiKey": "__AR_API_KEY__"
+      },
+      "models": {
+        "custom/default": {
+          "name": "Default Model"
+        }
+      }
+    }
+  },
+  "model": "custom/default",
+  "theme": "catppuccin"
+}
