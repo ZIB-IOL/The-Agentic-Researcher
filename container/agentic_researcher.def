@@ -148,6 +148,6 @@ From: ubuntu:22.04
     julia --version
 
 %labels
-    Author mzimmer
+    Author ZIB-IOL
     Version v3.0.0
     Description Agentic Researcher - Sandboxed AI research environment with multi-tool support
