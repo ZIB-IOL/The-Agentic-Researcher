@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2603.15914"><strong>Paper</strong></a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
-  <a href="#usage">Usage</a> &middot;
+  <a href="#workflow">Workflow</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#citation">Citation</a>
 </p>
@@ -80,6 +80,18 @@ agentic-researcher --yolo
 | [Gemini CLI](https://github.com/google/gemini-cli) | `GEMINI.md` | Google | `--tool gemini` |
 | [Codex CLI](https://github.com/openai/codex) | `AGENTS.md` | OpenAI | `--tool codex` |
 
+## Workflow
+
+### Starting a New Project
+
+1. **Launch** the sandbox from your project directory: e.g., `agentic-researcher --yolo`
+2. **Run `/setup_research_plan`** inside the CLI agent. This starts an interactive dialogue that asks about your research goal, evaluation metrics, constraints, and compute budget.
+3. The agent fills in the **Project Instructions** section of the instruction file (`CLAUDE.md`, `GEMINI.md`, or `AGENTS.md`) and creates the initial tracking files (`report.tex`, `TODO.md`).
+
+### Resuming a Session
+
+When you relaunch the sandbox on a project that already has filled-in instructions, running `/setup_research_plan` will automatically detect the existing state, read `report.tex` and `TODO.md`, and summarize where the project left off before continuing.
+
 ## Architecture
 
 ### Sandbox
@@ -94,7 +106,7 @@ agentic-researcher --yolo
 
 ### Research Agent Instructions
 
-The framework ships `INSTRUCTIONS.md` as a canonical template. At launch it is copied into the workspace under the filename required by the selected tool (`CLAUDE.md`, `GEMINI.md`, or `AGENTS.md`). The copied file defines research workflow rules, structured experiment recording in `report.tex`, and a verification protocol.
+The framework ships `INSTRUCTIONS.md` as a canonical template containing universal research commandments (e.g., never manipulate evaluation, one variable per experiment, record everything) and domain-specific modules for mathematical and compute-intensive research. At launch it is copied into the workspace under the filename required by the selected tool. The `/setup_research_plan` command then fills in the project-specific section through an interactive dialogue.
 
 ## Citation
 
