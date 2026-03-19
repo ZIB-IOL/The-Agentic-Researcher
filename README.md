@@ -27,7 +27,7 @@
 
 The Agentic Researcher launches AI coding agents inside **sandboxed containers** with filesystem isolation, GPU support, and structured research instructions.
 
-Supports [Claude Code](https://claude.ai/code), [OpenCode](https://opencode.ai), [Gemini CLI](https://github.com/google/gemini-cli), and [Codex CLI](https://github.com/openai/codex).
+Supports [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Codex CLI](https://github.com/openai/codex).
 
 ## Prerequisites
 
@@ -75,9 +75,9 @@ agentic-researcher --yolo
 
 | Tool | Instruction file | Provider | Flag |
 |------|-----------------|----------|------|
-| [Claude Code](https://claude.ai/code) | `CLAUDE.md` | Anthropic | `--tool claude` (default) |
+| [Claude Code](https://github.com/anthropics/claude-code) | `CLAUDE.md` | Anthropic | `--tool claude` (default) |
 | [OpenCode](https://opencode.ai) | `AGENTS.md` | Any (LiteLLM) | `--tool opencode` |
-| [Gemini CLI](https://github.com/google/gemini-cli) | `GEMINI.md` | Google | `--tool gemini` |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `GEMINI.md` | Google | `--tool gemini` |
 | [Codex CLI](https://github.com/openai/codex) | `AGENTS.md` | OpenAI | `--tool codex` |
 
 ## Workflow
