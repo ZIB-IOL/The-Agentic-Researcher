@@ -217,8 +217,8 @@ Example results table structure:
 Method & Model & Sparsity & PPL & $\Delta$ \\
 \midrule
 Baseline (RIA) & Qwen-1.5B & 60\% & 22.62 & -- \\
-RIA + EC (row) & Qwen-1.5B & 60\% & 21.48 & $-5.0\%$ \\
-RIA + EC (full) & Qwen-1.5B & 60\% & 20.09 & $-11.2\%$ \\
+RIA + Recon (row) & Qwen-1.5B & 60\% & 21.48 & $-5.0\%$ \\
+RIA + Recon (full) & Qwen-1.5B & 60\% & 20.09 & $-11.2\%$ \\
 \bottomrule
 \end{tabular}
 }
