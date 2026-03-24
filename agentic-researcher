@@ -21,6 +21,7 @@ capture_env_overrides() {
         AR_DEFAULT_MODEL
         AR_STATE_ROOT
         AR_EXTRA_BIND_DIRS
+        AR_EXTRA_ENV
         AR_DOCKER_GPUS
         AR_AUTH_MODE
         AR_API_PROVIDER
@@ -57,6 +58,7 @@ apply_env_overrides() {
         AR_DEFAULT_MODEL
         AR_STATE_ROOT
         AR_EXTRA_BIND_DIRS
+        AR_EXTRA_ENV
         AR_DOCKER_GPUS
         AR_AUTH_MODE
         AR_API_PROVIDER
@@ -90,6 +92,7 @@ apply_defaults() {
     AR_CLI_TOOL="${AR_CLI_TOOL:-claude}"
     AR_STATE_ROOT="${AR_STATE_ROOT:-$HOME/.cache/agentic-researcher}"
     AR_EXTRA_BIND_DIRS="${AR_EXTRA_BIND_DIRS:-}"
+    AR_EXTRA_ENV="${AR_EXTRA_ENV:-}"
     AR_DOCKER_GPUS="${AR_DOCKER_GPUS:-auto}"
 
     case "$AR_CLI_TOOL" in
@@ -771,6 +774,14 @@ build_env_args() {
             ENV_ARGS+=(--env "SANDBOX_TOOL=codex")
             ;;
     esac
+
+    # Extra user-defined environment variables
+    if [[ -n "${AR_EXTRA_ENV:-}" ]]; then
+        local IFS=':'
+        for entry in $AR_EXTRA_ENV; do
+            [[ -n "$entry" ]] && ENV_ARGS+=(--env "$entry")
+        done
+    fi
 }
 print_debug_launch() {
     if [[ "$DEBUG_LAUNCH" != "true" ]]; then
@@ -793,6 +804,9 @@ print_debug_launch() {
         for mount_line in "${EXTRA_DIR_DEBUG_MOUNTS[@]}"; do
             echo "    $mount_line"
         done
+    fi
+    if [[ -n "${AR_EXTRA_ENV:-}" ]]; then
+        echo "  Extra env:      $AR_EXTRA_ENV"
     fi
     echo ""
 }
@@ -944,6 +958,14 @@ launch_docker() {
     # Proxy
     if [[ -n "${AR_HTTPS_PROXY:-}" ]]; then
         DOCKER_ARGS+=(-e "https_proxy=$AR_HTTPS_PROXY" -e "http_proxy=${AR_HTTP_PROXY:-$AR_HTTPS_PROXY}")
+    fi
+
+    # Extra user-defined environment variables
+    if [[ -n "${AR_EXTRA_ENV:-}" ]]; then
+        local IFS=':'
+        for entry in $AR_EXTRA_ENV; do
+            [[ -n "$entry" ]] && DOCKER_ARGS+=(-e "$entry")
+        done
     fi
 
     # Tool-specific
