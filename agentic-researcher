@@ -741,6 +741,12 @@ build_env_args() {
         fi
     done
 
+    # If AR_API_KEY_ENV names a non-standard var, forward it as ANTHROPIC_API_KEY.
+    local _ar_key_var="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
+    if [[ "$_ar_key_var" != "ANTHROPIC_API_KEY" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+        ENV_ARGS+=(--env "ANTHROPIC_API_KEY=${!_ar_key_var}")
+    fi
+
     # Proxy
     if [[ -n "${AR_HTTPS_PROXY:-}" ]]; then
         ENV_ARGS+=(--env "https_proxy=$AR_HTTPS_PROXY" --env "http_proxy=${AR_HTTP_PROXY:-$AR_HTTPS_PROXY}")
@@ -928,6 +934,12 @@ launch_docker() {
             DOCKER_ARGS+=(-e "${env_name}=${!env_name}")
         fi
     done
+
+    # If AR_API_KEY_ENV names a non-standard var, forward it as ANTHROPIC_API_KEY.
+    local _ar_key_var="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
+    if [[ "$_ar_key_var" != "ANTHROPIC_API_KEY" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+        DOCKER_ARGS+=(-e "ANTHROPIC_API_KEY=${!_ar_key_var}")
+    fi
 
     # Proxy
     if [[ -n "${AR_HTTPS_PROXY:-}" ]]; then

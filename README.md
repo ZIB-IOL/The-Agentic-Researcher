@@ -55,6 +55,19 @@ agentic-researcher --apptainer --build
 
 Docker is the default runtime. By default the launcher stores state under `~/.cache/agentic-researcher` and launches Claude Code. Claude uses OAuth by default; other CLIs handle auth inside the tool, with standard API key env vars passed through if set.
 
+## Configuration
+
+Run `agentic-researcher --setup` to create a configuration file at `~/.config/agentic-researcher/config.sh`. The setup wizard lets you configure:
+
+- **Container runtime** — Docker or Apptainer
+- **CLI tool** — Claude Code, OpenCode, Gemini CLI, or Codex CLI
+- **Authentication** — OAuth login or API key (with configurable env var name)
+- **Custom API endpoint** — point Claude at an Anthropic-compatible proxy or gateway
+- **Network proxy** — HTTP/HTTPS proxy settings for use inside the container
+- **Extra bind directories** — additional host paths to mount into the sandbox
+
+You can re-run `--setup` at any time to update your configuration.
+
 ## Usage
 
 ```bash
