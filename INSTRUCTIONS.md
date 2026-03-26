@@ -9,7 +9,7 @@ Project Instructions at the end of this document.
 
 ## 0. Global constraints
 
-- **Startup**: if `~/.bashrc` exists and contains needed environment or proxy setup, run `source ~/.bashrc` at session start
+- **Startup**: if accessible from within the container, source the user's shell rc file at session start (`~/.bashrc`, `~/.zshrc`, or whichever exists) -- it may set HTTP proxies, PATH entries, aliases, or other environment configuration needed for git, curl, wget, etc.
 - **Package manager**: `uv` only (`uv sync`, `uv add`, `uv run` -- never pip)
 - **GPU**: check availability with `nvidia-smi`
 - **LaTeX**: read/edit only -- never compile. Syntax check: `TERM=dumb chktex report.tex`
