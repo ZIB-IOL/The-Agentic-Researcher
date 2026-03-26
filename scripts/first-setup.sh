@@ -7,16 +7,73 @@
 # Usage:
 #   agentic-researcher --setup                          # Full interactive wizard
 #   agentic-researcher --setup KEY=VALUE [KEY=VALUE...]  # Set individual values
+#   agentic-researcher --setup auth                      # Toggle oauth / api-key
 #
 # Examples:
 #   agentic-researcher --setup AR_CLI_TOOL=gemini
 #   agentic-researcher --setup AR_EXTRA_BIND_DIRS="/data/models, /shared/datasets"
+#   agentic-researcher --setup auth                      # Switch between subscription and custom endpoint
 #
 
 set -e
 
 CONFIG_DIR="$HOME/.config/agentic-researcher"
 CONFIG_FILE="$CONFIG_DIR/config.sh"
+
+# ── Quick auth toggle mode ────────────────────────────────────────
+if [[ $# -eq 1 && "$1" == "auth" ]]; then
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "Error: No config file found. Run 'agentic-researcher --setup' first."
+        exit 1
+    fi
+    source "$CONFIG_FILE"
+    echo "─── Authentication Mode ───"
+    echo "  Current: $AR_AUTH_MODE"
+    if [[ -n "${AR_CUSTOM_ANTHROPIC_ENDPOINT:-}" ]]; then
+        echo "  Endpoint: $AR_CUSTOM_ANTHROPIC_ENDPOINT (used in api-key mode only)"
+    fi
+    echo ""
+    echo "  1) oauth    — Claude subscription (interactive login)"
+    echo "  2) api-key  — Custom API key + endpoint"
+    echo ""
+    read -rp "Select [current]: " auth_choice
+    case "$auth_choice" in
+        1) new_mode="oauth" ;;
+        2) new_mode="api-key" ;;
+        *) echo "No change."; exit 0 ;;
+    esac
+    if [[ "$new_mode" == "$AR_AUTH_MODE" ]]; then
+        echo "Already set to $new_mode. No change."
+        exit 0
+    fi
+    # If switching to api-key, prompt for endpoint + key env var if not already set
+    if [[ "$new_mode" == "api-key" ]]; then
+        if [[ -z "${AR_CUSTOM_ANTHROPIC_ENDPOINT:-}" ]]; then
+            read -rp "Anthropic-compatible endpoint URL: " new_endpoint
+            if [[ -n "$new_endpoint" ]]; then
+                sed -i "s|^AR_CUSTOM_ANTHROPIC_ENDPOINT=.*|AR_CUSTOM_ANTHROPIC_ENDPOINT=\"${new_endpoint}\"|" "$CONFIG_FILE"
+                echo "  Updated: AR_CUSTOM_ANTHROPIC_ENDPOINT=\"$new_endpoint\""
+            fi
+        fi
+        cur_key_env="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
+        read -rp "API key env var [$cur_key_env]: " new_key_env
+        new_key_env="${new_key_env:-$cur_key_env}"
+        if [[ "$new_key_env" != "$cur_key_env" ]]; then
+            sed -i "s|^AR_API_KEY_ENV=.*|AR_API_KEY_ENV=\"${new_key_env}\"|" "$CONFIG_FILE"
+            echo "  Updated: AR_API_KEY_ENV=\"$new_key_env\""
+        fi
+    fi
+    sed -i "s|^AR_AUTH_MODE=.*|AR_AUTH_MODE=\"${new_mode}\"|" "$CONFIG_FILE"
+    echo ""
+    echo "Switched to: $new_mode"
+    if [[ "$new_mode" == "oauth" ]]; then
+        echo "  Claude will prompt for interactive login on next launch."
+    else
+        echo "  Endpoint: $(grep '^AR_CUSTOM_ANTHROPIC_ENDPOINT=' "$CONFIG_FILE" | cut -d'"' -f2)"
+        echo "  Make sure \$${new_key_env:-$cur_key_env} is set before launching."
+    fi
+    exit 0
+fi
 
 # ── Individual key=value mode ──────────────────────────────────────
 if [[ $# -gt 0 && "$1" == *=* ]]; then
