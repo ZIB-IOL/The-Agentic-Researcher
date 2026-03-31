@@ -157,6 +157,51 @@ Long-running experiments can produce large output. Prefer redirecting to log fil
 and monitoring with `tail -5` and `nvidia-smi` rather than streaming full output
 into context. Only investigate logs in detail if something looks wrong.
 
+### Module: Multi-Node Dispatch
+
+These apply when the launcher was started with `--multi-node` and `$AR_DISPATCH_DIR`
+is set. If that variable is not in your environment, skip this module entirely.
+
+**N1. DISCOVER NODES FIRST.**
+Run `remote-run --nodes` at session startup. This lists all allocated nodes and
+which is the head node (where you are running) vs. remote nodes (dispatch targets).
+
+**N2. DISPATCH INDEPENDENT EXPERIMENTS.**
+Use remote nodes for independent, long-running experiments. The `remote-run` command
+dispatches jobs to remote nodes where they run inside identical containers.
+
+```bash
+# Submit a background job on a remote node
+remote-run htc-gpuXXX --bg -- uv run python train.py --exp E005
+
+# Check status of all jobs
+remote-run --status
+
+# View output of a specific job
+remote-run --logs 001
+remote-run --tail 001
+
+# Kill a stuck job
+remote-run --kill 001
+```
+
+Use `--bg` (background) for non-blocking dispatch. Without it, `remote-run` blocks
+until the job completes. Use `--gpus N` to request fewer GPUs than available on
+the node.
+
+**N3. USE HEAD NODE DIRECTLY.**
+Head-node GPUs are available without dispatch -- use `CUDA_VISIBLE_DEVICES` for
+local GPU partitioning. Continue implementation work while experiments run on
+remote nodes.
+
+**N4. REDIRECT OUTPUT TO LOG FILES.**
+The dispatcher captures stdout/stderr, but prefer explicit log files for
+persistence. Write logs to a scratch directory, not `/workspace`.
+
+**N5. NEVER DISPATCH DEPENDENT WORK.**
+Only fully independent experiments should be dispatched. No job-to-job
+dependencies via dispatch. Dependent work must run sequentially on the same node.
+
 ## 2. Research workflow
 
 ### Session startup (every session or after context compaction)
@@ -164,8 +209,9 @@ into context. Only investigate logs in detail if something looks wrong.
 2. Read `TODO.md` -- open questions and deferred work
 3. Read the Project Instructions section below
 4. `git log --oneline -20` and `git status`
-5. Summarize: best result, last experiment, next step
-6. Continue from where the previous session left off
+5. If `$AR_DISPATCH_DIR` is set: run `remote-run --nodes` and `remote-run --status` to see available nodes and any running jobs
+6. Summarize: best result, last experiment, next step
+7. Continue from where the previous session left off
 
 ### Experiment loop
 1. **Explore** the codebase before any experiment. Document understanding in report.tex.
