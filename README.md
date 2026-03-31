@@ -86,6 +86,18 @@ agentic-researcher --tool gemini
 agentic-researcher --yolo
 ```
 
+### Multi-Node Dispatch (Slurm + Apptainer)
+
+For multi-node Slurm allocations, the `--multi-node` flag starts a dispatcher that lets the agent run experiments on remote nodes via the `remote-run` command inside the container:
+
+```bash
+get_gpu 2 2                          # Allocate 2 nodes × 2 GPUs
+agentic-researcher --multi-node      # Launch with dispatch support
+agentic-researcher --multi-node --test  # Validate setup without launching
+```
+
+Off by default. Requires Apptainer runtime and an active multi-node Slurm allocation. Single-node workflows are unaffected.
+
 ## Supported CLI Tools
 
 | Tool | Instruction file | Provider | Flag |
