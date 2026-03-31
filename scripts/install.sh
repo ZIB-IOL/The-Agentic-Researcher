@@ -148,7 +148,12 @@ stage_local_checkout() {
         --exclude='.venv' \
         --exclude='__pycache__' \
         -cf - . | tar -C "$INSTALL_DIR" -xf -
-    printf 'managed_by=agentic-researcher\nsource=local-checkout\n' > "$INSTALL_DIR/$INSTALL_MARKER"
+    local install_commit=""
+    if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse HEAD >/dev/null 2>&1; then
+        install_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+    fi
+    printf 'managed_by=agentic-researcher\nsource=local-checkout\nsource_path=%s\ninstall_commit=%s\n' \
+        "$REPO_ROOT" "$install_commit" > "$INSTALL_DIR/$INSTALL_MARKER"
 }
 
 bootstrap_remote_checkout() {
