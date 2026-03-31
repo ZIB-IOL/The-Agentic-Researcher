@@ -1,0 +1,274 @@
+#!/bin/bash
+#
+# remote-run: Dispatch commands to other nodes in a multi-node Slurm allocation.
+#
+# This script runs INSIDE the container. It communicates with the host-side
+# dispatcher by writing job files to a shared directory.
+#
+# Usage:
+#   remote-run <node> [--gpus N] -- <command...>     Run command (foreground, waits)
+#   remote-run <node> [--gpus N] --bg -- <command...> Run command (background, returns job ID)
+#   remote-run --status [job-id]                      Show job status (all or specific)
+#   remote-run --logs <job-id>                        Show stdout/stderr of a job
+#   remote-run --tail <job-id>                        Tail stdout of a running job
+#   remote-run --kill <job-id>                        Kill a running job
+#   remote-run --nodes                                List allocated nodes
+#   remote-run --help                                 Show this help
+#
+# Examples:
+#   remote-run htc-gpu112 -- uv run python train.py --exp E005
+#   remote-run htc-gpu113 --gpus 2 --bg -- CUDA_VISIBLE_DEVICES=0,1 uv run python train.py
+#   remote-run --status
+#   remote-run --logs 001
+#   remote-run --tail 003
+#
+
+set -euo pipefail
+
+DISPATCH_DIR="${AR_DISPATCH_DIR:?remote-run requires AR_DISPATCH_DIR}"
+JOBS_DIR="$DISPATCH_DIR/jobs"
+
+die() { echo "Error: $*" >&2; exit 1; }
+
+show_help() {
+    sed -n '3,/^$/{ s/^# \?//; p }' "$0"
+    exit 0
+}
+
+# --- Command: --nodes ---
+list_nodes() {
+    if [[ ! -f "$DISPATCH_DIR/nodes.txt" ]]; then
+        die "Node list not found. Is the dispatcher running?"
+    fi
+    local head_node=""
+    [[ -f "$DISPATCH_DIR/head_node.txt" ]] && head_node=$(cat "$DISPATCH_DIR/head_node.txt")
+    echo "Allocated nodes:"
+    while IFS= read -r node; do
+        if [[ "$node" == "$head_node" ]]; then
+            echo "  $node  (head - agent runs here, use GPUs directly)"
+        else
+            echo "  $node  (remote - dispatch via remote-run)"
+        fi
+    done < "$DISPATCH_DIR/nodes.txt"
+}
+
+# --- Command: --status ---
+show_status() {
+    local filter="${1:-}"
+    if [[ -n "$filter" ]]; then
+        local status_file="$JOBS_DIR/$filter.status"
+        if [[ -f "$status_file" ]]; then
+            local status
+            status=$(cat "$status_file")
+            local node=""
+            [[ -f "$JOBS_DIR/$filter.job" ]] && node=$(grep '^REMOTE_NODE=' "$JOBS_DIR/$filter.job" | cut -d= -f2)
+            echo "Job $filter: $status (node: ${node:-unknown})"
+        else
+            die "Job $filter not found"
+        fi
+        return
+    fi
+
+    # Show all jobs
+    local found=false
+    for job_file in "$JOBS_DIR"/*.job; do
+        [[ -f "$job_file" ]] || continue
+        found=true
+        local job_id
+        job_id=$(basename "$job_file" .job)
+        local status="pending"
+        [[ -f "$JOBS_DIR/$job_id.status" ]] && status=$(cat "$JOBS_DIR/$job_id.status")
+        local node
+        node=$(grep '^REMOTE_NODE=' "$job_file" | cut -d= -f2)
+        local cmd
+        cmd=$(grep '^REMOTE_CMD=' "$job_file" | cut -d= -f2- | head -c 60)
+        printf "%-6s %-16s %-12s %s\n" "$job_id" "$node" "$status" "$cmd"
+    done
+    if [[ "$found" == "false" ]]; then
+        echo "No jobs submitted yet."
+    fi
+}
+
+# --- Command: --logs ---
+show_logs() {
+    local job_id="${1:?Usage: remote-run --logs <job-id>}"
+    if [[ -f "$JOBS_DIR/$job_id.stdout" ]]; then
+        echo "=== stdout ==="
+        cat "$JOBS_DIR/$job_id.stdout"
+    fi
+    if [[ -f "$JOBS_DIR/$job_id.stderr" ]]; then
+        echo "=== stderr ==="
+        cat "$JOBS_DIR/$job_id.stderr"
+    fi
+    if [[ ! -f "$JOBS_DIR/$job_id.stdout" && ! -f "$JOBS_DIR/$job_id.stderr" ]]; then
+        die "No output files for job $job_id"
+    fi
+}
+
+# --- Command: --tail ---
+tail_logs() {
+    local job_id="${1:?Usage: remote-run --tail <job-id>}"
+    local stdout_file="$JOBS_DIR/$job_id.stdout"
+    if [[ ! -f "$stdout_file" ]]; then
+        die "No stdout file for job $job_id (job may not have started yet)"
+    fi
+    tail -f "$stdout_file"
+}
+
+# --- Command: --kill ---
+kill_job() {
+    local job_id="${1:?Usage: remote-run --kill <job-id>}"
+    local pid_file="$JOBS_DIR/$job_id.pid"
+    if [[ ! -f "$pid_file" ]]; then
+        die "No PID file for job $job_id"
+    fi
+    local pid
+    pid=$(cat "$pid_file")
+    # The PID is on the host side (dispatcher's srun process).
+    # We can't kill it directly from inside the container.
+    # Signal the dispatcher by writing a kill request.
+    echo "$pid" > "$JOBS_DIR/$job_id.kill"
+    echo "Kill request sent for job $job_id (pid $pid)"
+}
+
+# --- Command: submit job ---
+submit_job() {
+    local node=""
+    local gpus=""
+    local background=false
+    local workdir="/workspace"
+    local cmd=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --gpus)
+                gpus="$2"
+                shift 2
+                ;;
+            --bg|--background)
+                background=true
+                shift
+                ;;
+            --workdir)
+                workdir="$2"
+                shift 2
+                ;;
+            --)
+                shift
+                cmd="$*"
+                break
+                ;;
+            -*)
+                die "Unknown option: $1"
+                ;;
+            *)
+                if [[ -z "$node" ]]; then
+                    node="$1"
+                else
+                    die "Unexpected argument: $1 (did you forget '--' before the command?)"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    [[ -n "$node" ]] || die "No node specified. Usage: remote-run <node> [--gpus N] -- <command...>"
+    [[ -n "$cmd" ]] || die "No command specified. Use '--' to separate options from the command."
+
+    # Validate node is in our allocation
+    if [[ -f "$DISPATCH_DIR/nodes.txt" ]]; then
+        if ! grep -qx "$node" "$DISPATCH_DIR/nodes.txt"; then
+            echo "Warning: $node is not in the allocated node list."
+            echo "Available nodes:"
+            cat "$DISPATCH_DIR/nodes.txt"
+            die "Node $node not allocated"
+        fi
+    fi
+
+    # Generate job ID (zero-padded, sequential)
+    local job_num=1
+    while [[ -f "$JOBS_DIR/$(printf '%03d' $job_num).job" ]]; do
+        ((job_num++))
+    done
+    local job_id
+    job_id=$(printf '%03d' $job_num)
+
+    # Default GPUs: use all available on the node (from allocation)
+    if [[ -z "$gpus" ]]; then
+        gpus="${AR_GPUS_PER_NODE:-4}"
+    fi
+
+    # Write job file
+    cat > "$JOBS_DIR/$job_id.job" << EOF
+REMOTE_NODE=$node
+REMOTE_GPUS=$gpus
+REMOTE_WORKDIR=$workdir
+REMOTE_CMD=$cmd
+EOF
+
+    if [[ "$background" == "true" ]]; then
+        echo "Submitted job $job_id on $node ($gpus GPUs): $cmd"
+        echo "  Check status:  remote-run --status $job_id"
+        echo "  View logs:     remote-run --logs $job_id"
+        echo "  Tail output:   remote-run --tail $job_id"
+        return 0
+    fi
+
+    # Foreground: wait for completion
+    echo "Submitted job $job_id on $node ($gpus GPUs)"
+    echo "Waiting for completion..."
+
+    # Wait for status file to appear and show completion
+    while true; do
+        if [[ -f "$JOBS_DIR/$job_id.status" ]]; then
+            local status
+            status=$(cat "$JOBS_DIR/$job_id.status")
+            case "$status" in
+                running)
+                    ;;
+                done:0)
+                    echo "Job $job_id completed successfully."
+                    [[ -f "$JOBS_DIR/$job_id.stdout" ]] && cat "$JOBS_DIR/$job_id.stdout"
+                    return 0
+                    ;;
+                done:*)
+                    local exit_code="${status#done:}"
+                    echo "Job $job_id failed (exit code $exit_code)."
+                    [[ -f "$JOBS_DIR/$job_id.stderr" ]] && echo "=== stderr ===" && cat "$JOBS_DIR/$job_id.stderr"
+                    [[ -f "$JOBS_DIR/$job_id.stdout" ]] && echo "=== stdout ===" && cat "$JOBS_DIR/$job_id.stdout"
+                    return "$exit_code"
+                    ;;
+            esac
+        fi
+        sleep 2
+    done
+}
+
+# --- Main ---
+case "${1:-}" in
+    --help|-h)
+        show_help
+        ;;
+    --nodes)
+        list_nodes
+        ;;
+    --status)
+        show_status "${2:-}"
+        ;;
+    --logs)
+        show_logs "${2:-}"
+        ;;
+    --tail)
+        tail_logs "${2:-}"
+        ;;
+    --kill)
+        kill_job "${2:-}"
+        ;;
+    "")
+        show_help
+        ;;
+    *)
+        submit_job "$@"
+        ;;
+esac
