@@ -87,6 +87,30 @@ apply_env_overrides() {
     fi
 }
 
+check_install_staleness() {
+    local marker="$SCRIPT_DIR/.agentic-researcher-install"
+    [[ -f "$marker" ]] || return 0
+
+    local source_path="" install_commit=""
+    while IFS='=' read -r key value; do
+        case "$key" in
+            source_path) source_path="$value" ;;
+            install_commit) install_commit="$value" ;;
+        esac
+    done < "$marker"
+
+    [[ -n "$source_path" && -n "$install_commit" && -d "$source_path/.git" ]] || return 0
+
+    local current_commit
+    current_commit="$(git -C "$source_path" rev-parse HEAD 2>/dev/null)" || return 0
+
+    if [[ "$install_commit" != "$current_commit" ]]; then
+        echo "Warning: installed version is outdated (source repo has newer commits)."
+        echo "  Run: $source_path/scripts/install.sh --force"
+        echo ""
+    fi
+}
+
 apply_defaults() {
     AR_CONTAINER_RUNTIME="${AR_CONTAINER_RUNTIME:-docker}"
     AR_CLI_TOOL="${AR_CLI_TOOL:-claude}"
@@ -115,6 +139,7 @@ apply_defaults() {
 }
 YOLO_MODE=false
 TEST_MODE=false
+MULTI_NODE=false
 MODEL_SPECIFIED=false
 DEBUG_LAUNCH=false
 WORKSPACE_DIR=""
@@ -144,6 +169,10 @@ parse_arguments() {
                 ;;
             --test)
                 TEST_MODE=true
+                shift
+                ;;
+            --multi-node)
+                MULTI_NODE=true
                 shift
                 ;;
             --debug-launch)
@@ -236,6 +265,7 @@ Options:
   --docker            Force Docker runtime for this invocation
   --apptainer         Force Apptainer runtime for this invocation
   --test              Quick validation of sandbox environment
+  --multi-node        Enable multi-node dispatch (Apptainer + Slurm only)
   --debug-launch      Print extra launcher details and enable tool startup logs where supported
   --tool TOOL         Select CLI tool (claude|opencode|gemini|codex)
   --yolo              Auto-approve all permissions (Claude Code only)
@@ -261,6 +291,8 @@ Examples:
   agentic-researcher --tool gemini                # Use Gemini CLI
   agentic-researcher --tool codex ~/project       # Use Codex CLI
   agentic-researcher --yolo --model opus          # YOLO + Opus
+  agentic-researcher --multi-node                 # Multi-node dispatch (Slurm)
+  agentic-researcher --multi-node --test          # Validate multi-node setup
 
 What's Sandboxed:
   The agent can ONLY access your project directory.
@@ -711,6 +743,181 @@ setup_optional_binds() {
         done
     fi
 }
+# ============================================================================
+# Multi-node dispatch (optional, Apptainer + Slurm only)
+# ============================================================================
+
+validate_multi_node() {
+    if [[ "$MULTI_NODE" != "true" ]]; then
+        return
+    fi
+
+    if [[ "$AR_CONTAINER_RUNTIME" != "apptainer" ]]; then
+        echo "Error: --multi-node requires the Apptainer runtime (--apptainer)."
+        exit 1
+    fi
+
+    if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+        echo "Error: --multi-node requires an active multi-node Slurm allocation."
+        echo ""
+        echo "First allocate multiple nodes, e.g.:"
+        echo "  get_gpu 2 2    # 2 nodes × 2 GPUs = 4 GPUs"
+        echo ""
+        echo "For single-node use, omit --multi-node."
+        exit 1
+    fi
+
+    MN_NODELIST="${SLURM_JOB_NODELIST:-}"
+    if [[ -z "$MN_NODELIST" ]]; then
+        echo "Error: SLURM_JOB_NODELIST not set."
+        exit 1
+    fi
+
+    MN_NUM_NODES=$(scontrol show hostnames "$MN_NODELIST" | wc -l)
+    MN_HEAD_NODE=$(hostname -s)
+
+    # Detect GPUs per node from Slurm environment/job info
+    MN_GPUS_PER_NODE="${SLURM_GPUS_ON_NODE:-}"
+    if [[ -z "$MN_GPUS_PER_NODE" ]]; then
+        MN_GPUS_PER_NODE=$(scontrol show job "$SLURM_JOB_ID" 2>/dev/null \
+            | grep -oP 'TresPerNode=gres/gpu(:[a-zA-Z0-9]+)?:\K[0-9]+' | tail -1)
+    fi
+    if [[ -z "$MN_GPUS_PER_NODE" ]]; then
+        MN_GPUS_PER_NODE=$(nvidia-smi -L 2>/dev/null | wc -l)
+    fi
+    if [[ -z "$MN_GPUS_PER_NODE" || "$MN_GPUS_PER_NODE" -eq 0 ]]; then
+        echo "Warning: Could not detect GPUs per node, defaulting to 4"
+        MN_GPUS_PER_NODE=4
+    fi
+}
+
+setup_multi_node() {
+    if [[ "$MULTI_NODE" != "true" ]]; then
+        return
+    fi
+
+    DISPATCH_DIR="$STATE_ROOT/dispatch-$SLURM_JOB_ID"
+    mkdir -p "$DISPATCH_DIR/jobs"
+
+    # Write dispatcher config (host paths for the dispatcher to use)
+    cat > "$DISPATCH_DIR/dispatch.conf" << DISPEOF
+DISPATCH_DIR="$DISPATCH_DIR"
+CONTAINER_IMAGE="$CONTAINER_IMAGE"
+WORKSPACE_HOST="$WORKSPACE_DIR"
+STATE_ROOT="$STATE_ROOT"
+UV_CACHE_DIR="$UV_CACHE_DIR"
+UV_PYTHON_INSTALL_DIR="$UV_PYTHON_INSTALL_DIR"
+UV_TOOL_DIR="$UV_TOOL_DIR"
+HF_HOME="$HF_HOME"
+TRITON_CACHE_DIR="$TRITON_CACHE_DIR"
+HTTPS_PROXY="${AR_HTTPS_PROXY:-${HTTPS_PROXY:-}}"
+HTTP_PROXY="${AR_HTTP_PROXY:-${HTTP_PROXY:-}}"
+HEAD_NODE="$MN_HEAD_NODE"
+SLURM_JOB_ID="$SLURM_JOB_ID"
+SLURM_JOB_NODELIST="$MN_NODELIST"
+DISPEOF
+
+    # Multi-node bind mounts and env vars (appended to existing arrays)
+    MULTI_NODE_BINDS=(
+        --bind "$DISPATCH_DIR:$DISPATCH_DIR"
+        --bind "$SCRIPT_DIR/scripts/remote-run:/usr/local/bin/remote-run:ro"
+    )
+    MULTI_NODE_ENV=(
+        --env "AR_DISPATCH_DIR=$DISPATCH_DIR"
+        --env "AR_GPUS_PER_NODE=$MN_GPUS_PER_NODE"
+        --env "AR_NUM_NODES=$MN_NUM_NODES"
+        --env "AR_HEAD_NODE=$MN_HEAD_NODE"
+        --env "SLURM_JOB_NODELIST=$MN_NODELIST"
+    )
+}
+
+start_dispatcher() {
+    if [[ "$MULTI_NODE" != "true" ]]; then
+        return
+    fi
+
+    echo "Starting dispatcher daemon..."
+    bash "$SCRIPT_DIR/scripts/dispatcher.sh" "$DISPATCH_DIR/dispatch.conf" \
+        >> "$DISPATCH_DIR/dispatcher.log" 2>&1 &
+    DISPATCHER_PID=$!
+    sleep 2
+
+    if ! kill -0 "$DISPATCHER_PID" 2>/dev/null; then
+        echo "Error: Dispatcher failed to start. Check $DISPATCH_DIR/dispatcher.log"
+        exit 1
+    fi
+    echo "Dispatcher running (pid $DISPATCHER_PID)"
+    echo ""
+    echo "Inside the container, use 'remote-run' to dispatch to other nodes:"
+    echo "  remote-run --nodes                              # List nodes"
+    echo "  remote-run htc-gpuXXX -- uv run python train.py # Run on remote node"
+    echo "  remote-run htc-gpuXXX --bg -- command           # Run in background"
+    echo "  remote-run --status                             # Check all jobs"
+    echo ""
+}
+
+cleanup_multi_node() {
+    if [[ "$MULTI_NODE" != "true" ]]; then
+        return
+    fi
+    echo ""
+    echo "Shutting down dispatcher..."
+    if [[ -n "${DISPATCHER_PID:-}" ]]; then
+        kill "$DISPATCHER_PID" 2>/dev/null
+        wait "$DISPATCHER_PID" 2>/dev/null || true
+    fi
+    for pid_file in "$DISPATCH_DIR/jobs"/*.pid; do
+        [[ -f "$pid_file" ]] || continue
+        local pid
+        pid=$(cat "$pid_file")
+        kill "$pid" 2>/dev/null || true
+    done
+    echo "Dispatch directory preserved at: $DISPATCH_DIR"
+    echo "  (delete manually when done reviewing logs)"
+}
+
+test_multi_node() {
+    echo "Testing multi-node setup..."
+    echo ""
+    echo "Nodes in allocation:"
+    scontrol show hostnames "$MN_NODELIST" | while read -r node; do
+        if [[ "$node" == "$MN_HEAD_NODE" ]]; then
+            echo "  $node (head)"
+        else
+            echo "  $node (remote)"
+        fi
+    done
+    echo ""
+    echo "Testing container on head node..."
+    apptainer exec --nv --no-mount home --home /claude-home \
+        --bind "$WORKSPACE_DIR:/workspace" \
+        --bind "$CONTAINER_TMP:/tmp" \
+        --pwd /workspace \
+        "$CONTAINER_IMAGE" \
+        bash -c 'echo "  Container OK: $(python3 --version), GPUs: $(nvidia-smi -L 2>/dev/null | wc -l)"'
+    echo ""
+    echo "Testing dispatch to remote nodes..."
+    scontrol show hostnames "$MN_NODELIST" | while read -r node; do
+        [[ "$node" == "$MN_HEAD_NODE" ]] && continue
+        echo -n "  $node: "
+        srun --overlap --nodes=1 --ntasks=1 --nodelist="$node" \
+            --gres="gpu:$MN_GPUS_PER_NODE" --cpu-bind=none \
+            apptainer exec --nv --no-mount home --home /claude-home \
+                --bind "$WORKSPACE_DIR:/workspace" \
+                --bind "$STATE_ROOT:$STATE_ROOT" \
+                --bind "$CONTAINER_TMP:/tmp" \
+                --pwd /workspace \
+                "$CONTAINER_IMAGE" \
+                bash -c 'echo "OK - $(nvidia-smi -L 2>/dev/null | wc -l) GPUs"' \
+            || echo "FAILED (see error above)"
+    done
+    echo ""
+    echo "Dispatch directory: $DISPATCH_DIR"
+    echo ""
+    echo "Multi-node test complete."
+    exit 0
+}
+
 setup_opencode() {
     OPENCODE_COMMANDS_DIR="$OPENCODE_CONFIG_DIR/commands"
     mkdir -p "$OPENCODE_DATA_DIR" "$OPENCODE_CONFIG_DIR" "$OPENCODE_COMMANDS_DIR"
@@ -834,6 +1041,11 @@ launch_apptainer() {
         --pwd /workspace
     )
 
+    # Multi-node dispatch binds (if active)
+    if [[ "$MULTI_NODE" == "true" ]]; then
+        BIND_ARGS+=("${MULTI_NODE_BINDS[@]}")
+    fi
+
     # Claude/OpenCode-specific binds
     case "$AR_CLI_TOOL" in
         claude)
@@ -868,6 +1080,11 @@ launch_apptainer() {
             fi
             ;;
     esac
+
+    # Multi-node env vars (if active)
+    if [[ "$MULTI_NODE" == "true" ]]; then
+        ENV_ARGS+=("${MULTI_NODE_ENV[@]}")
+    fi
 
     if [[ "$mode" == "test" ]]; then
         BIND_ARGS+=(
@@ -1048,6 +1265,7 @@ launch_docker() {
     fi
 }
 main() {
+    check_install_staleness
     capture_env_overrides
     parse_arguments "$@"
     load_config
@@ -1056,12 +1274,14 @@ main() {
     validate_workspace
     validate_api_key
     validate_container
+    validate_multi_node
     setup_storage
     setup_instruction_file
     translate_tool_args
     setup_auth_binds
     setup_research_binds
     setup_optional_binds
+    setup_multi_node
     build_env_args
     print_debug_launch
 
@@ -1084,13 +1304,30 @@ main() {
 
     local banner_width=64
     echo "╔$(printf '═%.0s' $(seq 1 $banner_width))╗"
-    local title="Agentic Researcher - $tool_display"
+    if [[ "$MULTI_NODE" == "true" ]]; then
+        local title="Agentic Researcher - $tool_display (Multi-Node)"
+    else
+        local title="Agentic Researcher - $tool_display"
+    fi
     local pad=$(( banner_width - ${#title} - 7 ))
     printf "║       %s%*s║\n" "$title" "$pad" ""
     echo "╚$(printf '═%.0s' $(seq 1 $banner_width))╝"
     echo ""
+
+    if [[ "$MULTI_NODE" == "true" ]]; then
+        echo "Slurm Job:      $SLURM_JOB_ID"
+        echo "Nodes:          $MN_NUM_NODES ($MN_NODELIST)"
+        echo "Head node:      $MN_HEAD_NODE"
+        echo "GPUs/node:      $MN_GPUS_PER_NODE"
+        echo "Total GPUs:     $((MN_NUM_NODES * MN_GPUS_PER_NODE))"
+        echo ""
+    fi
+
     echo "Workspace:      $WORKSPACE_DIR"
     echo "Sandboxed:      Only /workspace is accessible"
+    if [[ "$MULTI_NODE" == "true" ]]; then
+        echo "Dispatch dir:   $DISPATCH_DIR"
+    fi
     echo "UV Cache:       $UV_CACHE_DIR"
 
     if [[ "$YOLO_MODE" == "true" ]]; then
@@ -1099,6 +1336,18 @@ main() {
         echo "Mode:           Protected (manual approval required)"
     fi
     echo ""
+
+    # Multi-node test mode
+    if [[ "$MULTI_NODE" == "true" && "$TEST_MODE" == "true" ]]; then
+        test_multi_node
+        # test_multi_node calls exit 0
+    fi
+
+    # Multi-node: start dispatcher and register cleanup
+    if [[ "$MULTI_NODE" == "true" ]]; then
+        trap cleanup_multi_node EXIT
+        start_dispatcher
+    fi
 
     echo "Starting $tool_display..."
     echo "================================================================"
