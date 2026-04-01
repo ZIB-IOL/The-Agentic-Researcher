@@ -246,6 +246,8 @@ def test_launcher_podman_test_mode_overrides_entrypoint(base_env: dict[str, str]
     podman_log = read_log(base_env["FAKE_PODMAN_LOG"])
     assert "run --rm" in podman_log
     assert "-it" not in podman_log
+    assert "--userns keep-id" in podman_log
+    assert ":/claude-home" in podman_log
     assert "--entrypoint /bin/bash" in podman_log
     assert "/test_sandbox.sh" in podman_log
 

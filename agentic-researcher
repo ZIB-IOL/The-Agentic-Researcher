@@ -462,6 +462,21 @@ setup_storage() {
     mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$UV_TOOL_DIR" \
              "$AR_CONFIG_STORE" "$AR_CONFIG_STORE/commands"
 
+    mkdir -p \
+        "$AR_CONFIG_STORE/.cache" \
+        "$AR_CONFIG_STORE/.config/opencode/commands" \
+        "$AR_CONFIG_STORE/.local/bin" \
+        "$AR_CONFIG_STORE/.local/share/opencode" \
+        "$AR_CONFIG_STORE/.local/state" \
+        "$AR_CONFIG_STORE/.claude/commands" \
+        "$AR_CONFIG_STORE/.codex" \
+        "$AR_CONFIG_STORE/.gemini/commands" \
+        "$AR_CONFIG_STORE/.gemini/skills" \
+        "$AR_CONFIG_STORE/.gemini/agents" \
+        "$AR_CONFIG_STORE/.gemini/history" \
+        "$AR_CONFIG_STORE/.gemini/tmp/bin" \
+        "$AR_CONFIG_STORE/.opencode/bin"
+
     # Ensure claude.json exists (required for onboarding bypass)
     if [[ ! -f "$CLAUDE_JSON" ]]; then
         echo '{"hasCompletedOnboarding": true}' > "$CLAUDE_JSON"
@@ -1163,11 +1178,16 @@ launch_oci_runtime() {
         -v "$UV_PYTHON_INSTALL_DIR:/uv-python"
         -v "$UV_TOOL_DIR:/uv-tools"
         -v "$STATE_ROOT:$STATE_ROOT"
+        -v "$AR_CONFIG_STORE:/claude-home"
         -w /workspace
     )
 
     if [[ -t 0 && -t 1 ]]; then
         OCI_ARGS+=(-it)
+    fi
+
+    if [[ "$oci_runtime" == "podman" ]]; then
+        OCI_ARGS+=(--userns keep-id)
     fi
 
     # Only request Docker GPU support when the host plausibly has an NVIDIA runtime.
