@@ -38,9 +38,17 @@ RUN arch="$(dpkg --print-architecture)" \
     && ln -sf /opt/node/bin/npx /usr/local/bin/npx \
     && rm -f /tmp/node.tar.xz
 
-RUN curl -fsSL https://install.julialang.org | sh -s -- --yes --path /opt/juliaup \
-    && ln -sf /opt/juliaup/bin/julia /usr/local/bin/julia \
-    && ln -sf /opt/juliaup/bin/juliaup /usr/local/bin/juliaup
+RUN arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+        amd64) julia_arch="x86_64"; julia_dir_arch="x64" ;; \
+        arm64) julia_arch="aarch64"; julia_dir_arch="aarch64" ;; \
+        *) echo "Unsupported architecture for Julia: $arch" >&2; exit 1 ;; \
+    esac \
+    && JULIA_VERSION=1.12.4 \
+    && curl -fsSL "https://julialang-s3.julialang.org/bin/linux/${julia_dir_arch}/${JULIA_VERSION%.*}/julia-${JULIA_VERSION}-linux-${julia_arch}.tar.gz" -o /tmp/julia.tar.gz \
+    && tar --no-same-owner -xzf /tmp/julia.tar.gz -C /opt \
+    && ln -sf "/opt/julia-${JULIA_VERSION}/bin/julia" /usr/local/bin/julia \
+    && rm -f /tmp/julia.tar.gz
 
 RUN arch="$(dpkg --print-architecture)" \
     && case "$arch" in \
