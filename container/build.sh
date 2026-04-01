@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Load config if available
-CONFIG_FILE="$HOME/.config/agentic-researcher/config.sh"
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh"
 if [[ -f "$CONFIG_FILE" ]]; then
     source "$CONFIG_FILE"
 fi
@@ -38,9 +38,16 @@ if [[ -n "$OCI_RUNTIME" ]]; then
         exit 1
     fi
 
-    runtime_name="$(printf '%s' "$OCI_RUNTIME" | sed 's/./\U&/')"
+    first_char="${OCI_RUNTIME%${OCI_RUNTIME#?}}"
+    rest="${OCI_RUNTIME#?}"
+    first_char_upper="$(printf '%s' "$first_char" | tr '[:lower:]' '[:upper:]')"
+    runtime_name="${first_char_upper}${rest}"
     echo "Building ${runtime_name} container..."
-    "$OCI_RUNTIME" build -t agentic-researcher:latest "$SCRIPT_DIR"
+    if [[ "$OCI_RUNTIME" == "podman" ]]; then
+        "$OCI_RUNTIME" build --format docker -t agentic-researcher:latest "$SCRIPT_DIR"
+    else
+        "$OCI_RUNTIME" build -t agentic-researcher:latest "$SCRIPT_DIR"
+    fi
     echo ""
     echo "${runtime_name} image built: agentic-researcher:latest"
 else

@@ -47,7 +47,7 @@ Options:
   --runtime NAME      Default runtime in generated config (docker|podman|apptainer)
   --tool NAME         Default tool in generated config (claude|opencode|gemini|codex)
   --state-root DIR    State/cache root in generated config
-  --write-config      Write ~/.config/agentic-researcher/config.sh
+  --write-config      Write ${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh
   --build             Build the selected container after install
   --force             Overwrite existing install and symlink
   --help              Show this help

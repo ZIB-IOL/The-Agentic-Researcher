@@ -141,19 +141,19 @@ apply_defaults() {
 
     case "$AR_CLI_TOOL" in
         claude)
-            AR_AUTH_MODE="${AR_AUTH_MODE:-oauth}"
+            AR_AUTH_MODE="***"
             AR_API_PROVIDER="${AR_API_PROVIDER:-anthropic}"
-            AR_API_KEY_ENV="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
+            AR_API_KEY_ENV="***"
             AR_DEFAULT_MODEL="${AR_DEFAULT_MODEL:-sonnet}"
             ;;
         opencode)
-            AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_AUTH_MODE="***"
             ;;
         gemini)
-            AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_AUTH_MODE="***"
             ;;
         codex)
-            AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_AUTH_MODE="***"
             ;;
     esac
 }
@@ -951,7 +951,7 @@ setup_opencode() {
     # Generate opencode config from template if custom endpoint is set
     local oc_config="$OPENCODE_CONFIG_DIR/opencode.json"
     if [[ -n "${AR_CUSTOM_ENDPOINT:-}" && -f "$SCRIPT_DIR/config/opencode_config.template.json" ]]; then
-        local api_key="${!AR_API_KEY_ENV:-}"
+        local api_key="***"
         sed -e "s|__AR_CUSTOM_ENDPOINT__|$AR_CUSTOM_ENDPOINT|g" \
             -e "s|__AR_API_KEY__|$api_key|g" \
             "$SCRIPT_DIR/config/opencode_config.template.json" > "$oc_config"
@@ -981,8 +981,9 @@ build_env_args() {
     # Only in api-key mode — in oauth mode the CLI handles auth itself.
     if [[ "${AR_AUTH_MODE:-}" == "api-key" ]]; then
         local _ar_key_var="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
-        if [[ "$_ar_key_var" != "ANTHROPIC_API_KEY" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-            ENV_ARGS+=(--env "ANTHROPIC_API_KEY=${!_ar_key_var}")
+        local anthropic_key_name="ANTHROPIC_API_KEY"
+        if [[ "$_ar_key_var" != "$anthropic_key_name" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            OCI_ARGS+=("-e" "${anthropic_key_name}=${!_ar_key_var}")
         fi
     fi
 
@@ -1150,7 +1151,7 @@ launch_oci_runtime() {
     host_user="$(id -un)"
     host_group="$(id -gn)"
 
-    local DOCKER_ARGS=(
+    local OCI_ARGS=(
         "$oci_runtime" run --rm -it
         --init
         -v "$WORKSPACE_DIR:/workspace"
@@ -1165,11 +1166,11 @@ launch_oci_runtime() {
     if [[ "$oci_runtime" == "docker" ]]; then
         case "${AR_DOCKER_GPUS:-auto}" in
             all)
-                DOCKER_ARGS+=(--gpus all)
+                OCI_ARGS+=(--gpus all)
                 ;;
             auto)
                 if [[ "$(uname -s)" == "Linux" ]] && command -v nvidia-smi >/dev/null 2>&1; then
-                    DOCKER_ARGS+=(--gpus all)
+                    OCI_ARGS+=(--gpus all)
                 fi
                 ;;
             none)
@@ -1181,11 +1182,11 @@ launch_oci_runtime() {
     for dir_bind in "${EXTRA_DIR_ROOT_BIND[@]}" "${EXTRA_DIR_BINDS[@]}"; do
         [[ -n "$dir_bind" ]] || continue
         # Convert --bind X:Y to -v X:Y
-        DOCKER_ARGS+=(-v "${dir_bind#--bind }")
+        OCI_ARGS+=(-v "${dir_bind#--bind }")
     done
 
     # Convert env args
-    DOCKER_ARGS+=(
+    OCI_ARGS+=(
         -e "UV_CACHE_DIR=/uv-cache"
         -e "UV_PYTHON_INSTALL_DIR=/uv-python"
         -e "UV_TOOL_DIR=/uv-tools"
@@ -1203,7 +1204,7 @@ launch_oci_runtime() {
 
     for env_name in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY GEMINI_API_KEY; do
         if [[ -n "${!env_name:-}" ]]; then
-            DOCKER_ARGS+=(-e "${env_name}=${!env_name}")
+            OCI_ARGS+=(-e "${env_name}=${!env_name}")
         fi
     done
 
@@ -1211,21 +1212,21 @@ launch_oci_runtime() {
     # Only in api-key mode — in oauth mode the CLI handles auth itself.
     if [[ "${AR_AUTH_MODE:-}" == "api-key" ]]; then
         local _ar_key_var="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
-        if [[ "$_ar_key_var" != "ANTHROPIC_API_KEY" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-            DOCKER_ARGS+=(-e "ANTHROPIC_API_KEY=${!_ar_key_var}")
+        local anthropic_key_name="ANTHROPIC_API_KEY"
+        if [[ "$_ar_key_var" != "$anthropic_key_name" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            OCI_ARGS+=("-e" "${anthropic_key_name}=${!_ar_key_var}")
         fi
     fi
-
     # Proxy
     if [[ -n "${AR_HTTPS_PROXY:-}" ]]; then
-        DOCKER_ARGS+=(-e "https_proxy=$AR_HTTPS_PROXY" -e "http_proxy=${AR_HTTP_PROXY:-$AR_HTTPS_PROXY}")
+        OCI_ARGS+=(-e "https_proxy=$AR_HTTPS_PROXY" -e "http_proxy=${AR_HTTP_PROXY:-$AR_HTTPS_PROXY}")
     fi
 
     # Extra user-defined environment variables
     if [[ -n "${AR_EXTRA_ENV:-}" ]]; then
         local IFS=':'
         for entry in $AR_EXTRA_ENV; do
-            [[ -n "$entry" ]] && DOCKER_ARGS+=(-e "$entry")
+            [[ -n "$entry" ]] && OCI_ARGS+=(-e "$entry")
         done
     fi
 
@@ -1244,12 +1245,12 @@ launch_oci_runtime() {
             if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
                 render_instruction_template "$AR_CONFIG_STORE/INSTRUCTIONS.md.template"
             fi
-            DOCKER_ARGS+=(
+            OCI_ARGS+=(
                 -v "$AR_CONFIG_STORE:/claude-home/.claude"
                 -v "$CLAUDE_JSON:/claude-home/.claude.json"
             )
             if [[ -n "${AR_CUSTOM_ANTHROPIC_ENDPOINT:-}" && "${AR_AUTH_MODE:-}" == "api-key" ]]; then
-                DOCKER_ARGS+=(-e "ANTHROPIC_BASE_URL=$AR_CUSTOM_ANTHROPIC_ENDPOINT")
+                OCI_ARGS+=(-e "ANTHROPIC_BASE_URL=$AR_CUSTOM_ANTHROPIC_ENDPOINT")
             fi
             ;;
         opencode)
@@ -1260,48 +1261,49 @@ launch_oci_runtime() {
                         cp "$SCRIPT_DIR/commands/$cmd_file.md" "$OPENCODE_CONFIG_DIR/commands/$cmd_file.md"
                     fi
                 done
-                DOCKER_ARGS+=(-v "$OPENCODE_CONFIG_DIR:/claude-home/.config/opencode")
+                OCI_ARGS+=(-v "$OPENCODE_CONFIG_DIR:/claude-home/.config/opencode")
             fi
             if [[ -d "${OPENCODE_DATA_DIR:-}" ]]; then
-                DOCKER_ARGS+=(-v "$OPENCODE_DATA_DIR:/claude-home/.local/share/opencode")
+                OCI_ARGS+=(-v "$OPENCODE_DATA_DIR:/claude-home/.local/share/opencode")
             fi
             if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
                 render_instruction_template "$AR_CONFIG_STORE/INSTRUCTIONS.md.template"
-                DOCKER_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
+                OCI_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
             fi
             ;;
         gemini)
             if [[ -d "${GEMINI_STATE_DIR:-}" ]]; then
-                DOCKER_ARGS+=(-v "$GEMINI_STATE_DIR:/claude-home/.gemini")
+                OCI_ARGS+=(-v "$GEMINI_STATE_DIR:/claude-home/.gemini")
             fi
             ;;
         codex)
             if [[ -d "${CODEX_STATE_DIR:-}" ]]; then
-                DOCKER_ARGS+=(-v "$CODEX_STATE_DIR:/claude-home/.codex")
+                OCI_ARGS+=(-v "$CODEX_STATE_DIR:/claude-home/.codex")
             fi
             if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
                 render_instruction_template "$AR_CONFIG_STORE/INSTRUCTIONS.md.template"
-                DOCKER_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
+                OCI_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
             fi
             ;;
     esac
 
     # SSH/git
     if [[ -d "$HOME/.ssh" ]]; then
-        DOCKER_ARGS+=(-v "$HOME/.ssh:/claude-home/.ssh:ro")
+        OCI_ARGS+=(-v "$HOME/.ssh:/claude-home/.ssh:ro")
     fi
     if [[ -f "$HOME/.gitconfig" ]]; then
-        DOCKER_ARGS+=(-v "$HOME/.gitconfig:/claude-home/.gitconfig:ro")
+        OCI_ARGS+=(-v "$HOME/.gitconfig:/claude-home/.gitconfig:ro")
     fi
 
     if [[ "$mode" == "test" ]]; then
-        DOCKER_ARGS+=(-v "$SCRIPT_DIR/scripts/test_sandbox.sh:/test_sandbox.sh:ro")
-        DOCKER_ARGS+=(-e "AR_CLI_TOOL=$AR_CLI_TOOL")
-        "${DOCKER_ARGS[@]}" agentic-researcher:latest /bin/bash /test_sandbox.sh
+        OCI_ARGS+=(-v "$SCRIPT_DIR/scripts/test_sandbox.sh:/test_sandbox.sh:ro")
+        OCI_ARGS+=(-e "AR_CLI_TOOL=$AR_CLI_TOOL")
+        "${OCI_ARGS[@]}" agentic-researcher:latest /bin/bash /test_sandbox.sh
     else
-        "${DOCKER_ARGS[@]}" agentic-researcher:latest "${TOOL_ARGS[@]}"
+        "${OCI_ARGS[@]}" agentic-researcher:latest "${TOOL_ARGS[@]}"
     fi
 }
+
 main() {
     check_install_staleness
     capture_env_overrides
@@ -1342,10 +1344,11 @@ main() {
 
     local banner_width=64
     echo "╔$(printf '═%.0s' $(seq 1 $banner_width))╗"
+    local title
     if [[ "$MULTI_NODE" == "true" ]]; then
-        local title="Agentic Researcher - $tool_display (Multi-Node)"
+        title="Agentic Researcher - $tool_display (Multi-Node)"
     else
-        local title="Agentic Researcher - $tool_display"
+        title="Agentic Researcher - $tool_display"
     fi
     local pad=$(( banner_width - ${#title} - 7 ))
     printf "║       %s%*s║\n" "$title" "$pad" ""

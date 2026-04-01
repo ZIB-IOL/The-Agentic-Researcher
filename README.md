@@ -56,11 +56,11 @@ agentic-researcher --podman --build
 agentic-researcher --apptainer --build
 ```
 
-Docker is the default runtime when available. If Docker is not installed but Podman is, the launcher and install script automatically fall back to Podman for OCI builds. Podman uses the same OCI image and launch flow as Docker, but runs through the `podman` CLI instead. By default the launcher stores state under `~/.cache/agentic-researcher` and launches Claude Code. Claude uses OAuth by default; other CLIs handle auth inside the tool, with standard API key env vars passed through if set.
+Docker is the default runtime when available. If Docker is not installed or not on `PATH`, but Podman is, the launcher and install script automatically fall back to Podman for OCI builds. Podman uses the same OCI image and launch flow as Docker, but runs through the `podman` CLI instead. When building with Podman, the build script requests Docker image format (`podman build --format docker`) so Dockerfile `SHELL` directives keep working and Podman avoids noisy OCI-format warnings. By default the launcher stores state under `~/.cache/agentic-researcher` and launches Claude Code. Claude uses OAuth by default; other CLIs handle auth inside the tool, with standard API key env vars passed through if set.
 
 ## Configuration
 
-Run `agentic-researcher --setup` to create a configuration file at `~/.config/agentic-researcher/config.sh`. The setup wizard lets you configure:
+Run `agentic-researcher --setup` to create a configuration file at `${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh`. The setup wizard lets you configure:
 
 - **Container runtime** — Docker, Podman, or Apptainer
 - **CLI tool** — Claude Code, OpenCode, Gemini CLI, or Codex CLI

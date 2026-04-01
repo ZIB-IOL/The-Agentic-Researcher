@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-CONFIG_DIR="$HOME/.config/agentic-researcher"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher"
 CONFIG_FILE="$CONFIG_DIR/config.sh"
 REMOVE_CONFIG=false
 REMOVE_DOCKER=false
@@ -18,7 +18,7 @@ Usage:
 
 Options:
   --yes             Skip confirmation prompt
-  --include-config  Also remove ~/.config/agentic-researcher/config.sh
+  --include-config  Also remove ${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh
   --include-docker  Also remove docker image agentic-researcher:latest
   --all             Equivalent to --include-config --include-docker
   --help            Show this help

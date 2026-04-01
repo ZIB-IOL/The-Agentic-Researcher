@@ -2,7 +2,7 @@
 #
 # first-setup.sh: Interactive setup wizard for Agentic Researcher.
 #
-# Generates ~/.config/agentic-researcher/config.sh
+# Generates ${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh
 #
 # Usage:
 #   agentic-researcher --setup                          # Full interactive wizard
@@ -17,7 +17,7 @@
 
 set -e
 
-CONFIG_DIR="$HOME/.config/agentic-researcher"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher"
 CONFIG_FILE="$CONFIG_DIR/config.sh"
 
 # ── Quick auth toggle mode ────────────────────────────────────────
