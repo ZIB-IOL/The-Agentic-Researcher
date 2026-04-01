@@ -141,19 +141,22 @@ apply_defaults() {
 
     case "$AR_CLI_TOOL" in
         claude)
-            AR_AUTH_MODE="***"
+            AR_AUTH_MODE="${AR_AUTH_MODE:-oauth}"
             AR_API_PROVIDER="${AR_API_PROVIDER:-anthropic}"
-            AR_API_KEY_ENV="***"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
             AR_DEFAULT_MODEL="${AR_DEFAULT_MODEL:-sonnet}"
             ;;
         opencode)
-            AR_AUTH_MODE="***"
+            AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-OPENAI_API_KEY}"
             ;;
         gemini)
-            AR_AUTH_MODE="***"
+            AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-GEMINI_API_KEY}"
             ;;
         codex)
-            AR_AUTH_MODE="***"
+            AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-OPENAI_API_KEY}"
             ;;
     esac
 }
@@ -951,7 +954,8 @@ setup_opencode() {
     # Generate opencode config from template if custom endpoint is set
     local oc_config="$OPENCODE_CONFIG_DIR/opencode.json"
     if [[ -n "${AR_CUSTOM_ENDPOINT:-}" && -f "$SCRIPT_DIR/config/opencode_config.template.json" ]]; then
-        local api_key="***"
+        local api_key_var="${AR_API_KEY_ENV:-OPENAI_API_KEY}"
+        local api_key="${!api_key_var:-}"
         sed -e "s|__AR_CUSTOM_ENDPOINT__|$AR_CUSTOM_ENDPOINT|g" \
             -e "s|__AR_API_KEY__|$api_key|g" \
             "$SCRIPT_DIR/config/opencode_config.template.json" > "$oc_config"
@@ -983,7 +987,7 @@ build_env_args() {
         local _ar_key_var="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
         local anthropic_key_name="ANTHROPIC_API_KEY"
         if [[ "$_ar_key_var" != "$anthropic_key_name" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-            OCI_ARGS+=("-e" "${anthropic_key_name}=${!_ar_key_var}")
+            ENV_ARGS+=(--env "${anthropic_key_name}=${!_ar_key_var}")
         fi
     fi
 

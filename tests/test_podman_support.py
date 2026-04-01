@@ -125,6 +125,29 @@ def test_build_script_reads_xdg_config_for_proxy(base_env: dict[str, str], tmp_p
     assert "env:https_proxy=http://proxy.example:3128 http_proxy=http://proxy.example:3128" in podman_log
 
 
+def test_launcher_apply_defaults_keeps_real_auth_defaults(base_env: dict[str, str]) -> None:
+    result = run(
+        [str(AGENTIC_RESEARCHER), "--help"],
+        {**base_env, "AR_CLI_TOOL": "claude"},
+    )
+
+    launcher_text = AGENTIC_RESEARCHER.read_text()
+    assert 'AR_AUTH_MODE="${AR_AUTH_MODE:-oauth}"' in launcher_text
+    assert 'AR_API_KEY_ENV="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"' in launcher_text
+    assert 'AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"' in launcher_text
+
+
+def test_setup_opencode_reads_api_key_from_configured_env_var(base_env: dict[str, str], tmp_path: Path) -> None:
+    launcher_text = AGENTIC_RESEARCHER.read_text()
+    assert 'local api_key_var="${AR_API_KEY_ENV:-OPENAI_API_KEY}"' in launcher_text
+    assert 'local api_key="${!api_key_var:-}"' in launcher_text
+
+
+def test_build_env_args_uses_env_args_for_apptainer_key_forwarding(base_env: dict[str, str]) -> None:
+    launcher_text = AGENTIC_RESEARCHER.read_text()
+    assert 'ENV_ARGS+=(--env "${anthropic_key_name}=${!_ar_key_var}")' in launcher_text
+
+
 def test_install_help_mentions_xdg_config_path(base_env: dict[str, str]) -> None:
     result = run([str(INSTALL_SCRIPT), "--help"], base_env)
 
