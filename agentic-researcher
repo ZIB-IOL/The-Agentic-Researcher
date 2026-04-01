@@ -1156,7 +1156,7 @@ launch_oci_runtime() {
     host_group="$(id -gn)"
 
     local OCI_ARGS=(
-        "$oci_runtime" run --rm -it
+        "$oci_runtime" run --rm
         --init
         -v "$WORKSPACE_DIR:/workspace"
         -v "$UV_CACHE_DIR:/uv-cache"
@@ -1165,6 +1165,10 @@ launch_oci_runtime() {
         -v "$STATE_ROOT:$STATE_ROOT"
         -w /workspace
     )
+
+    if [[ -t 0 && -t 1 ]]; then
+        OCI_ARGS+=(-it)
+    fi
 
     # Only request Docker GPU support when the host plausibly has an NVIDIA runtime.
     if [[ "$oci_runtime" == "docker" ]]; then
@@ -1300,9 +1304,10 @@ launch_oci_runtime() {
     fi
 
     if [[ "$mode" == "test" ]]; then
+        OCI_ARGS+=(--entrypoint /bin/bash)
         OCI_ARGS+=(-v "$SCRIPT_DIR/scripts/test_sandbox.sh:/test_sandbox.sh:ro")
         OCI_ARGS+=(-e "AR_CLI_TOOL=$AR_CLI_TOOL")
-        "${OCI_ARGS[@]}" agentic-researcher:latest /bin/bash /test_sandbox.sh
+        "${OCI_ARGS[@]}" agentic-researcher:latest /test_sandbox.sh
     else
         "${OCI_ARGS[@]}" agentic-researcher:latest "${TOOL_ARGS[@]}"
     fi

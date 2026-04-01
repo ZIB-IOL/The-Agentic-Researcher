@@ -240,6 +240,17 @@ def test_launcher_auto_detects_podman_for_build_when_docker_is_absent(
     assert read_log(base_env["FAKE_DOCKER_LOG"]) == ""
 
 
+def test_launcher_podman_test_mode_overrides_entrypoint(base_env: dict[str, str]) -> None:
+    result = run([str(AGENTIC_RESEARCHER), "--podman", "--tool", "codex", "--test"], base_env)
+
+    assert result.returncode == 0
+    podman_log = read_log(base_env["FAKE_PODMAN_LOG"])
+    assert "run --rm" in podman_log
+    assert "-it" not in podman_log
+    assert "--entrypoint /bin/bash" in podman_log
+    assert "/test_sandbox.sh" in podman_log
+
+
 def test_install_script_auto_detects_podman_when_docker_is_absent(
     base_env: dict[str, str], fake_bin: Path, tmp_path: Path
 ) -> None:
