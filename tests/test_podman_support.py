@@ -87,7 +87,7 @@ def read_log(path: str) -> str:
     return log_path.read_text()
 
 
-def write_xdg_config(env: dict[str, str], xdg_config_home: Path, content: str) -> Path:
+def write_xdg_config(xdg_config_home: Path, content: str) -> Path:
     config_dir = xdg_config_home / "agentic-researcher"
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / "config.sh"
@@ -110,7 +110,6 @@ def test_build_script_uses_podman_for_podman_runtime(base_env: dict[str, str]) -
 def test_build_script_reads_xdg_config_for_proxy(base_env: dict[str, str], tmp_path: Path) -> None:
     xdg_config_home = tmp_path / "xdg-config"
     write_xdg_config(
-        base_env,
         xdg_config_home,
         'AR_HTTPS_PROXY="http://proxy.example:3128"\nAR_HTTP_PROXY="http://proxy.example:3128"\n',
     )
@@ -131,6 +130,7 @@ def test_launcher_apply_defaults_keeps_real_auth_defaults(base_env: dict[str, st
         {**base_env, "AR_CLI_TOOL": "claude"},
     )
 
+    assert result.returncode == 0
     launcher_text = AGENTIC_RESEARCHER.read_text()
     assert 'AR_AUTH_MODE="${AR_AUTH_MODE:-oauth}"' in launcher_text
     assert 'AR_API_KEY_ENV="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"' in launcher_text
@@ -173,7 +173,6 @@ def test_cleanup_uses_xdg_config_path(base_env: dict[str, str], tmp_path: Path) 
     state_root = tmp_path / "state-root"
     state_root.mkdir()
     config_path = write_xdg_config(
-        base_env,
         xdg_config_home,
         f'AR_STATE_ROOT="{state_root}"\n',
     )
