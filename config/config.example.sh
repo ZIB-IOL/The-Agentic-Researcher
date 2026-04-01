@@ -4,7 +4,7 @@
 # Location: ~/.config/agentic-researcher/config.sh
 # Edit individual settings:  agentic-researcher --setup KEY=VALUE
 
-# Container runtime: apptainer | docker
+# Container runtime: apptainer | docker | podman
 AR_CONTAINER_RUNTIME="apptainer"
 
 # Authentication: oauth | tool | api-key

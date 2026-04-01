@@ -7,7 +7,7 @@ set -euo pipefail
 
 DEFAULT_INSTALL_DIR="$HOME/.local/share/agentic-researcher"
 DEFAULT_BIN_DIR="$HOME/.local/bin"
-DEFAULT_CONFIG_DIR="$HOME/.config/agentic-researcher"
+DEFAULT_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher"
 DEFAULT_REPO_URL="https://github.com/ZIB-IOL/The-Agentic-Researcher.git"
 DEFAULT_REPO_REF="main"
 INSTALL_MARKER=".agentic-researcher-install"
@@ -17,12 +17,22 @@ BIN_DIR="$DEFAULT_BIN_DIR"
 CONFIG_DIR="$DEFAULT_CONFIG_DIR"
 REPO_URL="$DEFAULT_REPO_URL"
 REPO_REF="$DEFAULT_REPO_REF"
-RUNTIME="docker"
+RUNTIME=""
 TOOL="claude"
 STATE_ROOT="$HOME/.cache/agentic-researcher"
 WRITE_CONFIG=false
 BUILD_IMAGE=false
 FORCE=false
+
+detect_default_oci_runtime() {
+    if command -v docker >/dev/null 2>&1; then
+        printf '%s\n' "docker"
+    elif command -v podman >/dev/null 2>&1; then
+        printf '%s\n' "podman"
+    else
+        printf '%s\n' "docker"
+    fi
+}
 
 show_help() {
     cat <<'EOF'
@@ -34,7 +44,7 @@ Options:
   --bin-dir DIR       Create launcher symlink in DIR
   --repo-url URL      Git repository to clone for bootstrap installs
   --ref NAME          Git branch or tag to clone for bootstrap installs
-  --runtime NAME      Default runtime in generated config (docker|apptainer)
+  --runtime NAME      Default runtime in generated config (docker|podman|apptainer)
   --tool NAME         Default tool in generated config (claude|opencode|gemini|codex)
   --state-root DIR    State/cache root in generated config
   --write-config      Write ~/.config/agentic-researcher/config.sh
@@ -46,6 +56,7 @@ Examples:
   ./scripts/install.sh
   ./scripts/install.sh --write-config --build
   ./scripts/install.sh --runtime apptainer --tool codex --write-config
+  ./scripts/install.sh --runtime podman --write-config --build
 EOF
 }
 
@@ -104,8 +115,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ -z "$RUNTIME" ]]; then
+    RUNTIME="$(detect_default_oci_runtime)"
+    if [[ "$RUNTIME" == "podman" ]] && ! command -v docker >/dev/null 2>&1; then
+        echo "Docker not found, falling back to Podman."
+    fi
+fi
+
 case "$RUNTIME" in
-    docker|apptainer) ;;
+    docker|podman|apptainer) ;;
     *)
         echo "Error: Unsupported runtime: $RUNTIME" >&2
         exit 1
@@ -260,8 +278,8 @@ print_path_hint() {
 
 run_build() {
     local launcher="$BIN_DIR/agentic-researcher"
-    if [[ "$RUNTIME" == "docker" ]]; then
-        "$launcher" --docker --build
+    if [[ "$RUNTIME" == "docker" || "$RUNTIME" == "podman" ]]; then
+        "$launcher" --"$RUNTIME" --build
     else
         "$launcher" --apptainer --build
     fi

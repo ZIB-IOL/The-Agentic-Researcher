@@ -19,11 +19,30 @@ fi
 [[ -n "${https_proxy:-}" ]] && export https_proxy
 [[ -n "${http_proxy:-}" ]] && export http_proxy
 
-if [[ "${1:-}" == "--docker" || "${1:-}" == "docker" ]]; then
-    echo "Building Docker container..."
-    docker build -t agentic-researcher:latest "$SCRIPT_DIR"
+OCI_RUNTIME=""
+case "${1:-}" in
+    --docker|docker)
+        OCI_RUNTIME="docker"
+        ;;
+    --podman|podman)
+        OCI_RUNTIME="podman"
+        ;;
+esac
+
+if [[ -n "$OCI_RUNTIME" ]]; then
+    if ! command -v "$OCI_RUNTIME" >/dev/null 2>&1; then
+        echo "Error: '$OCI_RUNTIME' is not installed or not on PATH."
+        echo ""
+        echo "Install $OCI_RUNTIME on the host, then rerun:"
+        echo "  agentic-researcher --$OCI_RUNTIME --build"
+        exit 1
+    fi
+
+    runtime_name="$(printf '%s' "$OCI_RUNTIME" | sed 's/./\U&/')"
+    echo "Building ${runtime_name} container..."
+    "$OCI_RUNTIME" build -t agentic-researcher:latest "$SCRIPT_DIR"
     echo ""
-    echo "Docker image built: agentic-researcher:latest"
+    echo "${runtime_name} image built: agentic-researcher:latest"
 else
     if [[ "$(uname -s)" != "Linux" ]]; then
         echo "Error: Apptainer builds are only supported on Linux hosts. Current host: $(uname -s)"

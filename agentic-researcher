@@ -42,8 +42,13 @@ capture_env_overrides() {
     done
 }
 
+config_file_path() {
+    printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh"
+}
+
 load_config() {
-    local cfg="$HOME/.config/agentic-researcher/config.sh"
+    local cfg
+    cfg="$(config_file_path)"
     if [[ -f "$cfg" ]]; then
         source "$cfg"
     fi
@@ -111,8 +116,23 @@ check_install_staleness() {
     fi
 }
 
+detect_default_oci_runtime() {
+    if command -v docker >/dev/null 2>&1; then
+        printf '%s\n' "docker"
+    elif command -v podman >/dev/null 2>&1; then
+        printf '%s\n' "podman"
+    else
+        printf '%s\n' "docker"
+    fi
+}
+
 apply_defaults() {
-    AR_CONTAINER_RUNTIME="${AR_CONTAINER_RUNTIME:-docker}"
+    if [[ -z "${AR_CONTAINER_RUNTIME:-}" ]]; then
+        AR_CONTAINER_RUNTIME="$(detect_default_oci_runtime)"
+        if [[ "$AR_CONTAINER_RUNTIME" == "podman" ]] && ! command -v docker >/dev/null 2>&1; then
+            echo "Docker not found, falling back to Podman."
+        fi
+    fi
     AR_CLI_TOOL="${AR_CLI_TOOL:-claude}"
     AR_STATE_ROOT="${AR_STATE_ROOT:-$HOME/.cache/agentic-researcher}"
     AR_EXTRA_BIND_DIRS="${AR_EXTRA_BIND_DIRS:-}"
@@ -181,6 +201,10 @@ parse_arguments() {
                 ;;
             --docker)
                 AR_CONTAINER_RUNTIME_OVERRIDE="docker"
+                shift
+                ;;
+            --podman)
+                AR_CONTAINER_RUNTIME_OVERRIDE="podman"
                 shift
                 ;;
             --apptainer)
@@ -263,6 +287,7 @@ Options:
   --clean             Remove launcher-managed local state
   --uninstall         Remove the installed launcher and optional local state
   --docker            Force Docker runtime for this invocation
+  --podman            Force Podman runtime for this invocation
   --apptainer         Force Apptainer runtime for this invocation
   --test              Quick validation of sandbox environment
   --multi-node        Enable multi-node dispatch (Apptainer + Slurm only)
@@ -278,6 +303,7 @@ Options:
 Examples:
   agentic-researcher --build                      # Build default container
   agentic-researcher --docker --build             # Build Docker container
+  agentic-researcher --podman --build             # Build Podman container
   agentic-researcher --apptainer --build          # Build Apptainer container
   agentic-researcher --setup                      # Optional setup wizard
   agentic-researcher --clean                      # Interactive cleanup of local state
@@ -417,7 +443,7 @@ validate_container() {
             exit 1
         fi
     fi
-    # Docker validation happens at launch time
+    # Docker/Podman validation happens at launch time
 }
 setup_storage() {
     STATE_ROOT="${AR_STATE_ROOT:-$HOME/.cache/agentic-researcher}"
@@ -475,7 +501,7 @@ setup_storage() {
 render_instruction_template() {
     local output_path="$1"
 
-    if [[ "$AR_CONTAINER_RUNTIME" == "docker" ]]; then
+    if [[ "$AR_CONTAINER_RUNTIME" == "docker" || "$AR_CONTAINER_RUNTIME" == "podman" ]]; then
         awk '
             /<!-- DOCKER-OMIT-START -->/ { skip=1; next }
             /<!-- DOCKER-OMIT-END -->/   { skip=0; next }
@@ -1003,8 +1029,8 @@ print_debug_launch() {
     echo "  Tool:           $AR_CLI_TOOL"
     echo "  Workspace:      $WORKSPACE_DIR"
     echo "  State root:     $STATE_ROOT"
-    if [[ "$AR_CONTAINER_RUNTIME" == "docker" ]]; then
-        echo "  Docker image:   agentic-researcher:latest"
+    if [[ "$AR_CONTAINER_RUNTIME" == "docker" || "$AR_CONTAINER_RUNTIME" == "podman" ]]; then
+        echo "  Runtime image:  agentic-researcher:latest"
     else
         echo "  Container:      $CONTAINER_IMAGE"
     fi
@@ -1106,16 +1132,26 @@ launch_apptainer() {
             "${TOOL_ARGS[@]}"
     fi
 }
-launch_docker() {
+launch_oci_runtime() {
     local mode="${1:-run}"
+    local oci_runtime="$AR_CONTAINER_RUNTIME"
     local host_uid host_gid host_user host_group
+
+    if ! command -v "$oci_runtime" >/dev/null 2>&1; then
+        echo "Error: $oci_runtime runtime selected, but '$oci_runtime' is not installed or not on PATH."
+        echo ""
+        echo "Install $oci_runtime on the host, then rerun:"
+        echo "  agentic-researcher --$oci_runtime --build"
+        exit 1
+    fi
+
     host_uid="$(id -u)"
     host_gid="$(id -g)"
     host_user="$(id -un)"
     host_group="$(id -gn)"
 
     local DOCKER_ARGS=(
-        docker run --rm -it
+        "$oci_runtime" run --rm -it
         --init
         -v "$WORKSPACE_DIR:/workspace"
         -v "$UV_CACHE_DIR:/uv-cache"
@@ -1126,18 +1162,20 @@ launch_docker() {
     )
 
     # Only request Docker GPU support when the host plausibly has an NVIDIA runtime.
-    case "${AR_DOCKER_GPUS:-auto}" in
-        all)
-            DOCKER_ARGS+=(--gpus all)
-            ;;
-        auto)
-            if [[ "$(uname -s)" == "Linux" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+    if [[ "$oci_runtime" == "docker" ]]; then
+        case "${AR_DOCKER_GPUS:-auto}" in
+            all)
                 DOCKER_ARGS+=(--gpus all)
-            fi
-            ;;
-        none)
-            ;;
-    esac
+                ;;
+            auto)
+                if [[ "$(uname -s)" == "Linux" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+                    DOCKER_ARGS+=(--gpus all)
+                fi
+                ;;
+            none)
+                ;;
+        esac
+    fi
 
     # Extra bind dirs
     for dir_bind in "${EXTRA_DIR_ROOT_BIND[@]}" "${EXTRA_DIR_BINDS[@]}"; do
@@ -1354,11 +1392,11 @@ main() {
     echo ""
 
     # Launch
-    if [[ "$AR_CONTAINER_RUNTIME" == "docker" ]]; then
+    if [[ "$AR_CONTAINER_RUNTIME" == "docker" || "$AR_CONTAINER_RUNTIME" == "podman" ]]; then
         if [[ "$TEST_MODE" == "true" ]]; then
-            launch_docker test
+            launch_oci_runtime test
         else
-            launch_docker run
+            launch_oci_runtime run
         fi
     else
         if [[ "$TEST_MODE" == "true" ]]; then
