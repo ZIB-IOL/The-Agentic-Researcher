@@ -128,8 +128,10 @@ case "$ACTIVE_TOOL" in
     codex)
         if [[ -n "${OPENAI_API_KEY:-}" ]]; then
             pass "OPENAI_API_KEY is set"
+        elif codex login status >/dev/null 2>&1; then
+            pass "Codex login session is available"
         else
-            fail "OPENAI_API_KEY is not set"
+            fail "OPENAI_API_KEY is not set and no Codex login session is available"
         fi
         ;;
 esac
