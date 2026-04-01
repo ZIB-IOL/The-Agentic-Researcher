@@ -33,6 +33,11 @@ Everything else (host home, other projects, system files) is inaccessible.
   directory provided by the runtime. If none exists, create a clearly named
   directory such as `/workspace/artifacts/` or `/workspace/logs/` and keep bulky
   outputs there rather than scattering them across the repo.
+- **Library caches**: the container pre-configures cache environment variables
+  (e.g., `HF_HOME`, `TRITON_CACHE_DIR`) to point outside the workspace. Do not
+  override these with explicit `cache_dir=` arguments pointing into `/workspace`.
+  Accidental caching inside the git working tree can create large binary files
+  that bloat `.git/objects/` irreversibly.
 
 ## 1. The Ten Commandments
 
@@ -308,6 +313,11 @@ Include in report.tex:
 - Tag successes: `git tag exp-EXXX-success`
 - Clean state before new experiments: `git checkout .` or `git stash`
 - Never force-push or rewrite shared history
+- **Never `git add .`, `git add -A`, or `git add --all`.** Always stage files by
+  name. Accidentally staged large binaries create git objects that persist even
+  after unstaging and can fill disk quota.
+- **Before committing**, run `git diff --cached --stat` and check that no
+  unexpectedly large files are staged.
 
 ## 6. Directory & file conventions
 

@@ -985,9 +985,9 @@ build_env_args() {
             ;;
     esac
 
-    # Extra user-defined environment variables
+    # Extra user-defined environment variables (pipe-separated KEY=VALUE pairs)
     if [[ -n "${AR_EXTRA_ENV:-}" ]]; then
-        local IFS=':'
+        local IFS='|'
         for entry in $AR_EXTRA_ENV; do
             [[ -n "$entry" ]] && ENV_ARGS+=(--env "$entry")
         done
@@ -1183,9 +1183,9 @@ launch_docker() {
         DOCKER_ARGS+=(-e "https_proxy=$AR_HTTPS_PROXY" -e "http_proxy=${AR_HTTP_PROXY:-$AR_HTTPS_PROXY}")
     fi
 
-    # Extra user-defined environment variables
+    # Extra user-defined environment variables (pipe-separated KEY=VALUE pairs)
     if [[ -n "${AR_EXTRA_ENV:-}" ]]; then
-        local IFS=':'
+        local IFS='|'
         for entry in $AR_EXTRA_ENV; do
             [[ -n "$entry" ]] && DOCKER_ARGS+=(-e "$entry")
         done

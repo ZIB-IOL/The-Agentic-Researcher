@@ -64,7 +64,7 @@ Run `agentic-researcher --setup` to create a configuration file at `~/.config/ag
 - **Authentication** — OAuth login or API key (with configurable env var name)
 - **Custom API endpoint** — point Claude at an Anthropic-compatible proxy or gateway
 - **State/cache directory** (`AR_STATE_ROOT`) — where caches, container `/tmp`, and tool state are stored. Defaults to `~/.cache/agentic-researcher`. On HPC systems with Apptainer, set this to a path with sufficient space (e.g. on a scratch filesystem) to avoid hitting the default 64 MB overlay limit
-- **Extra environment variables** (`AR_EXTRA_ENV`) — colon-separated `KEY=VALUE` pairs forwarded into the container (e.g. `HF_TOKEN=hf_...:WANDB_API_KEY=...`)
+- **Extra environment variables** (`AR_EXTRA_ENV`) — pipe-separated `KEY=VALUE` pairs forwarded into the container (e.g. `HF_TOKEN=hf_...|WANDB_API_KEY=...`)
 - **Network proxy** — HTTP/HTTPS proxy settings for use inside the container
 - **Extra bind directories** — additional host paths to mount into the sandbox
 
