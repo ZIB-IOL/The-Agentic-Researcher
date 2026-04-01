@@ -53,6 +53,7 @@ build_apptainer_args() {
         --env UV_LINK_MODE=symlink
         --env "HF_HOME=$HF_HOME"
         --env "TRITON_CACHE_DIR=$TRITON_CACHE_DIR"
+        --env "WANDB_DIR=$WANDB_DIR"
         --env "TERM=${TERM:-xterm-256color}"
     )
 
@@ -106,7 +107,7 @@ run_job() {
         $APPTAINER_ARGS \
         --pwd "$remote_workdir" \
         "$CONTAINER_IMAGE" \
-        bash -c "$remote_cmd" \
+        bash -c "cd $remote_workdir && $remote_cmd" \
         > "$job_base.stdout" \
         2> "$job_base.stderr" &
 
