@@ -42,8 +42,13 @@ capture_env_overrides() {
     done
 }
 
+config_file_path() {
+    printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh"
+}
+
 load_config() {
-    local cfg="$HOME/.config/agentic-researcher/config.sh"
+    local cfg
+    cfg="$(config_file_path)"
     if [[ -f "$cfg" ]]; then
         source "$cfg"
     fi
@@ -111,8 +116,23 @@ check_install_staleness() {
     fi
 }
 
+detect_default_oci_runtime() {
+    if command -v docker >/dev/null 2>&1; then
+        printf '%s\n' "docker"
+    elif command -v podman >/dev/null 2>&1; then
+        printf '%s\n' "podman"
+    else
+        printf '%s\n' "docker"
+    fi
+}
+
 apply_defaults() {
-    AR_CONTAINER_RUNTIME="${AR_CONTAINER_RUNTIME:-docker}"
+    if [[ -z "${AR_CONTAINER_RUNTIME:-}" ]]; then
+        AR_CONTAINER_RUNTIME="$(detect_default_oci_runtime)"
+        if [[ "$AR_CONTAINER_RUNTIME" == "podman" ]] && ! command -v docker >/dev/null 2>&1; then
+            echo "Docker not found, falling back to Podman."
+        fi
+    fi
     AR_CLI_TOOL="${AR_CLI_TOOL:-claude}"
     AR_STATE_ROOT="${AR_STATE_ROOT:-$HOME/.cache/agentic-researcher}"
     AR_EXTRA_BIND_DIRS="${AR_EXTRA_BIND_DIRS:-}"
@@ -128,12 +148,15 @@ apply_defaults() {
             ;;
         opencode)
             AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-OPENAI_API_KEY}"
             ;;
         gemini)
             AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-GEMINI_API_KEY}"
             ;;
         codex)
             AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-OPENAI_API_KEY}"
             ;;
     esac
 }
@@ -181,6 +204,10 @@ parse_arguments() {
                 ;;
             --docker)
                 AR_CONTAINER_RUNTIME_OVERRIDE="docker"
+                shift
+                ;;
+            --podman)
+                AR_CONTAINER_RUNTIME_OVERRIDE="podman"
                 shift
                 ;;
             --apptainer)
@@ -263,6 +290,7 @@ Options:
   --clean             Remove launcher-managed local state
   --uninstall         Remove the installed launcher and optional local state
   --docker            Force Docker runtime for this invocation
+  --podman            Force Podman runtime for this invocation
   --apptainer         Force Apptainer runtime for this invocation
   --test              Quick validation of sandbox environment
   --multi-node        Enable multi-node dispatch (Apptainer + Slurm only)
@@ -278,6 +306,7 @@ Options:
 Examples:
   agentic-researcher --build                      # Build default container
   agentic-researcher --docker --build             # Build Docker container
+  agentic-researcher --podman --build             # Build Podman container
   agentic-researcher --apptainer --build          # Build Apptainer container
   agentic-researcher --setup                      # Optional setup wizard
   agentic-researcher --clean                      # Interactive cleanup of local state
@@ -417,7 +446,7 @@ validate_container() {
             exit 1
         fi
     fi
-    # Docker validation happens at launch time
+    # Docker/Podman validation happens at launch time
 }
 setup_storage() {
     STATE_ROOT="${AR_STATE_ROOT:-$HOME/.cache/agentic-researcher}"
@@ -432,6 +461,21 @@ setup_storage() {
 
     mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$UV_TOOL_DIR" \
              "$AR_CONFIG_STORE" "$AR_CONFIG_STORE/commands"
+
+    mkdir -p \
+        "$AR_CONFIG_STORE/.cache" \
+        "$AR_CONFIG_STORE/.config/opencode/commands" \
+        "$AR_CONFIG_STORE/.local/bin" \
+        "$AR_CONFIG_STORE/.local/share/opencode" \
+        "$AR_CONFIG_STORE/.local/state" \
+        "$AR_CONFIG_STORE/.claude/commands" \
+        "$AR_CONFIG_STORE/.codex" \
+        "$AR_CONFIG_STORE/.gemini/commands" \
+        "$AR_CONFIG_STORE/.gemini/skills" \
+        "$AR_CONFIG_STORE/.gemini/agents" \
+        "$AR_CONFIG_STORE/.gemini/history" \
+        "$AR_CONFIG_STORE/.gemini/tmp/bin" \
+        "$AR_CONFIG_STORE/.opencode/bin"
 
     # Ensure claude.json exists (required for onboarding bypass)
     if [[ ! -f "$CLAUDE_JSON" ]]; then
@@ -476,7 +520,7 @@ setup_storage() {
 render_instruction_template() {
     local output_path="$1"
 
-    if [[ "$AR_CONTAINER_RUNTIME" == "docker" ]]; then
+    if [[ "$AR_CONTAINER_RUNTIME" == "docker" || "$AR_CONTAINER_RUNTIME" == "podman" ]]; then
         awk '
             /<!-- DOCKER-OMIT-START -->/ { skip=1; next }
             /<!-- DOCKER-OMIT-END -->/   { skip=0; next }
@@ -927,7 +971,8 @@ setup_opencode() {
     # Generate opencode config from template if custom endpoint is set
     local oc_config="$OPENCODE_CONFIG_DIR/opencode.json"
     if [[ -n "${AR_CUSTOM_ENDPOINT:-}" && -f "$SCRIPT_DIR/config/opencode_config.template.json" ]]; then
-        local api_key="${!AR_API_KEY_ENV:-}"
+        local api_key_var="${AR_API_KEY_ENV:-OPENAI_API_KEY}"
+        local api_key="${!api_key_var:-}"
         sed -e "s|__AR_CUSTOM_ENDPOINT__|$AR_CUSTOM_ENDPOINT|g" \
             -e "s|__AR_API_KEY__|$api_key|g" \
             "$SCRIPT_DIR/config/opencode_config.template.json" > "$oc_config"
@@ -958,8 +1003,9 @@ build_env_args() {
     # Only in api-key mode — in oauth mode the CLI handles auth itself.
     if [[ "${AR_AUTH_MODE:-}" == "api-key" ]]; then
         local _ar_key_var="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
-        if [[ "$_ar_key_var" != "ANTHROPIC_API_KEY" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-            ENV_ARGS+=(--env "ANTHROPIC_API_KEY=${!_ar_key_var}")
+        local anthropic_key_name="ANTHROPIC_API_KEY"
+        if [[ "$_ar_key_var" != "$anthropic_key_name" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            ENV_ARGS+=(--env "${anthropic_key_name}=${!_ar_key_var}")
         fi
     fi
 
@@ -1006,8 +1052,8 @@ print_debug_launch() {
     echo "  Tool:           $AR_CLI_TOOL"
     echo "  Workspace:      $WORKSPACE_DIR"
     echo "  State root:     $STATE_ROOT"
-    if [[ "$AR_CONTAINER_RUNTIME" == "docker" ]]; then
-        echo "  Docker image:   agentic-researcher:latest"
+    if [[ "$AR_CONTAINER_RUNTIME" == "docker" || "$AR_CONTAINER_RUNTIME" == "podman" ]]; then
+        echo "  Runtime image:  agentic-researcher:latest"
     else
         echo "  Container:      $CONTAINER_IMAGE"
     fi
@@ -1109,48 +1155,69 @@ launch_apptainer() {
             "${TOOL_ARGS[@]}"
     fi
 }
-launch_docker() {
+launch_oci_runtime() {
     local mode="${1:-run}"
+    local oci_runtime="$AR_CONTAINER_RUNTIME"
     local host_uid host_gid host_user host_group
+
+    if ! command -v "$oci_runtime" >/dev/null 2>&1; then
+        echo "Error: $oci_runtime runtime selected, but '$oci_runtime' is not installed or not on PATH."
+        echo ""
+        echo "Install $oci_runtime on the host, then rerun:"
+        echo "  agentic-researcher --$oci_runtime --build"
+        exit 1
+    fi
+
     host_uid="$(id -u)"
     host_gid="$(id -g)"
     host_user="$(id -un)"
     host_group="$(id -gn)"
 
-    local DOCKER_ARGS=(
-        docker run --rm -it
+    local OCI_ARGS=(
+        "$oci_runtime" run --rm
         --init
         -v "$WORKSPACE_DIR:/workspace"
         -v "$UV_CACHE_DIR:/uv-cache"
         -v "$UV_PYTHON_INSTALL_DIR:/uv-python"
         -v "$UV_TOOL_DIR:/uv-tools"
         -v "$STATE_ROOT:$STATE_ROOT"
+        -v "$AR_CONFIG_STORE:/claude-home"
         -w /workspace
     )
 
+    if [[ -t 0 && -t 1 ]]; then
+        OCI_ARGS+=(-it)
+    fi
+
+    if [[ "$oci_runtime" == "podman" ]]; then
+        OCI_ARGS+=(--userns keep-id)
+    fi
+
     # Only request Docker GPU support when the host plausibly has an NVIDIA runtime.
-    case "${AR_DOCKER_GPUS:-auto}" in
-        all)
-            DOCKER_ARGS+=(--gpus all)
-            ;;
-        auto)
-            if [[ "$(uname -s)" == "Linux" ]] && command -v nvidia-smi >/dev/null 2>&1; then
-                DOCKER_ARGS+=(--gpus all)
-            fi
-            ;;
-        none)
-            ;;
-    esac
+    if [[ "$oci_runtime" == "docker" ]]; then
+        case "${AR_DOCKER_GPUS:-auto}" in
+            all)
+                OCI_ARGS+=(--gpus all)
+                ;;
+            auto)
+                if [[ "$(uname -s)" == "Linux" ]] && command -v nvidia-smi >/dev/null 2>&1; then
+                    OCI_ARGS+=(--gpus all)
+                fi
+                ;;
+            none)
+                ;;
+        esac
+    fi
 
     # Extra bind dirs
     for dir_bind in "${EXTRA_DIR_ROOT_BIND[@]}" "${EXTRA_DIR_BINDS[@]}"; do
         [[ -n "$dir_bind" ]] || continue
         # Convert --bind X:Y to -v X:Y
-        DOCKER_ARGS+=(-v "${dir_bind#--bind }")
+        OCI_ARGS+=(-v "${dir_bind#--bind }")
     done
 
     # Convert env args
-    DOCKER_ARGS+=(
+    OCI_ARGS+=(
         -e "UV_CACHE_DIR=/uv-cache"
         -e "UV_PYTHON_INSTALL_DIR=/uv-python"
         -e "UV_TOOL_DIR=/uv-tools"
@@ -1169,7 +1236,7 @@ launch_docker() {
 
     for env_name in ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY GEMINI_API_KEY; do
         if [[ -n "${!env_name:-}" ]]; then
-            DOCKER_ARGS+=(-e "${env_name}=${!env_name}")
+            OCI_ARGS+=(-e "${env_name}=${!env_name}")
         fi
     done
 
@@ -1177,21 +1244,21 @@ launch_docker() {
     # Only in api-key mode — in oauth mode the CLI handles auth itself.
     if [[ "${AR_AUTH_MODE:-}" == "api-key" ]]; then
         local _ar_key_var="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
-        if [[ "$_ar_key_var" != "ANTHROPIC_API_KEY" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-            DOCKER_ARGS+=(-e "ANTHROPIC_API_KEY=${!_ar_key_var}")
+        local anthropic_key_name="ANTHROPIC_API_KEY"
+        if [[ "$_ar_key_var" != "$anthropic_key_name" && -n "${!_ar_key_var:-}" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            OCI_ARGS+=("-e" "${anthropic_key_name}=${!_ar_key_var}")
         fi
     fi
-
     # Proxy
     if [[ -n "${AR_HTTPS_PROXY:-}" ]]; then
-        DOCKER_ARGS+=(-e "https_proxy=$AR_HTTPS_PROXY" -e "http_proxy=${AR_HTTP_PROXY:-$AR_HTTPS_PROXY}")
+        OCI_ARGS+=(-e "https_proxy=$AR_HTTPS_PROXY" -e "http_proxy=${AR_HTTP_PROXY:-$AR_HTTPS_PROXY}")
     fi
 
     # Extra user-defined environment variables (pipe-separated KEY=VALUE pairs)
     if [[ -n "${AR_EXTRA_ENV:-}" ]]; then
         local IFS='|'
         for entry in $AR_EXTRA_ENV; do
-            [[ -n "$entry" ]] && DOCKER_ARGS+=(-e "$entry")
+            [[ -n "$entry" ]] && OCI_ARGS+=(-e "$entry")
         done
     fi
 
@@ -1210,12 +1277,12 @@ launch_docker() {
             if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
                 render_instruction_template "$AR_CONFIG_STORE/INSTRUCTIONS.md.template"
             fi
-            DOCKER_ARGS+=(
+            OCI_ARGS+=(
                 -v "$AR_CONFIG_STORE:/claude-home/.claude"
                 -v "$CLAUDE_JSON:/claude-home/.claude.json"
             )
             if [[ -n "${AR_CUSTOM_ANTHROPIC_ENDPOINT:-}" && "${AR_AUTH_MODE:-}" == "api-key" ]]; then
-                DOCKER_ARGS+=(-e "ANTHROPIC_BASE_URL=$AR_CUSTOM_ANTHROPIC_ENDPOINT")
+                OCI_ARGS+=(-e "ANTHROPIC_BASE_URL=$AR_CUSTOM_ANTHROPIC_ENDPOINT")
             fi
             ;;
         opencode)
@@ -1226,48 +1293,50 @@ launch_docker() {
                         cp "$SCRIPT_DIR/commands/$cmd_file.md" "$OPENCODE_CONFIG_DIR/commands/$cmd_file.md"
                     fi
                 done
-                DOCKER_ARGS+=(-v "$OPENCODE_CONFIG_DIR:/claude-home/.config/opencode")
+                OCI_ARGS+=(-v "$OPENCODE_CONFIG_DIR:/claude-home/.config/opencode")
             fi
             if [[ -d "${OPENCODE_DATA_DIR:-}" ]]; then
-                DOCKER_ARGS+=(-v "$OPENCODE_DATA_DIR:/claude-home/.local/share/opencode")
+                OCI_ARGS+=(-v "$OPENCODE_DATA_DIR:/claude-home/.local/share/opencode")
             fi
             if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
                 render_instruction_template "$AR_CONFIG_STORE/INSTRUCTIONS.md.template"
-                DOCKER_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
+                OCI_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
             fi
             ;;
         gemini)
             if [[ -d "${GEMINI_STATE_DIR:-}" ]]; then
-                DOCKER_ARGS+=(-v "$GEMINI_STATE_DIR:/claude-home/.gemini")
+                OCI_ARGS+=(-v "$GEMINI_STATE_DIR:/claude-home/.gemini")
             fi
             ;;
         codex)
             if [[ -d "${CODEX_STATE_DIR:-}" ]]; then
-                DOCKER_ARGS+=(-v "$CODEX_STATE_DIR:/claude-home/.codex")
+                OCI_ARGS+=(-v "$CODEX_STATE_DIR:/claude-home/.codex")
             fi
             if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
                 render_instruction_template "$AR_CONFIG_STORE/INSTRUCTIONS.md.template"
-                DOCKER_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
+                OCI_ARGS+=(-v "$AR_CONFIG_STORE:/claude-home/.claude")
             fi
             ;;
     esac
 
     # SSH/git
     if [[ -d "$HOME/.ssh" ]]; then
-        DOCKER_ARGS+=(-v "$HOME/.ssh:/claude-home/.ssh:ro")
+        OCI_ARGS+=(-v "$HOME/.ssh:/claude-home/.ssh:ro")
     fi
     if [[ -f "$HOME/.gitconfig" ]]; then
-        DOCKER_ARGS+=(-v "$HOME/.gitconfig:/claude-home/.gitconfig:ro")
+        OCI_ARGS+=(-v "$HOME/.gitconfig:/claude-home/.gitconfig:ro")
     fi
 
     if [[ "$mode" == "test" ]]; then
-        DOCKER_ARGS+=(-v "$SCRIPT_DIR/scripts/test_sandbox.sh:/test_sandbox.sh:ro")
-        DOCKER_ARGS+=(-e "AR_CLI_TOOL=$AR_CLI_TOOL")
-        "${DOCKER_ARGS[@]}" agentic-researcher:latest /bin/bash /test_sandbox.sh
+        OCI_ARGS+=(--entrypoint /bin/bash)
+        OCI_ARGS+=(-v "$SCRIPT_DIR/scripts/test_sandbox.sh:/test_sandbox.sh:ro")
+        OCI_ARGS+=(-e "AR_CLI_TOOL=$AR_CLI_TOOL")
+        "${OCI_ARGS[@]}" agentic-researcher:latest /test_sandbox.sh
     else
-        "${DOCKER_ARGS[@]}" agentic-researcher:latest "${TOOL_ARGS[@]}"
+        "${OCI_ARGS[@]}" agentic-researcher:latest "${TOOL_ARGS[@]}"
     fi
 }
+
 main() {
     check_install_staleness
     capture_env_overrides
@@ -1308,10 +1377,11 @@ main() {
 
     local banner_width=64
     echo "╔$(printf '═%.0s' $(seq 1 $banner_width))╗"
+    local title
     if [[ "$MULTI_NODE" == "true" ]]; then
-        local title="Agentic Researcher - $tool_display (Multi-Node)"
+        title="Agentic Researcher - $tool_display (Multi-Node)"
     else
-        local title="Agentic Researcher - $tool_display"
+        title="Agentic Researcher - $tool_display"
     fi
     local pad=$(( banner_width - ${#title} - 7 ))
     printf "║       %s%*s║\n" "$title" "$pad" ""
@@ -1358,11 +1428,11 @@ main() {
     echo ""
 
     # Launch
-    if [[ "$AR_CONTAINER_RUNTIME" == "docker" ]]; then
+    if [[ "$AR_CONTAINER_RUNTIME" == "docker" || "$AR_CONTAINER_RUNTIME" == "podman" ]]; then
         if [[ "$TEST_MODE" == "true" ]]; then
-            launch_docker test
+            launch_oci_runtime test
         else
-            launch_docker run
+            launch_oci_runtime run
         fi
     else
         if [[ "$TEST_MODE" == "true" ]]; then

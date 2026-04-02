@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Load config if available
-CONFIG_FILE="$HOME/.config/agentic-researcher/config.sh"
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh"
 if [[ -f "$CONFIG_FILE" ]]; then
     source "$CONFIG_FILE"
 fi
@@ -19,11 +19,37 @@ fi
 [[ -n "${https_proxy:-}" ]] && export https_proxy
 [[ -n "${http_proxy:-}" ]] && export http_proxy
 
-if [[ "${1:-}" == "--docker" || "${1:-}" == "docker" ]]; then
-    echo "Building Docker container..."
-    docker build -t agentic-researcher:latest "$SCRIPT_DIR"
+OCI_RUNTIME=""
+case "${1:-}" in
+    --docker|docker)
+        OCI_RUNTIME="docker"
+        ;;
+    --podman|podman)
+        OCI_RUNTIME="podman"
+        ;;
+esac
+
+if [[ -n "$OCI_RUNTIME" ]]; then
+    if ! command -v "$OCI_RUNTIME" >/dev/null 2>&1; then
+        echo "Error: '$OCI_RUNTIME' is not installed or not on PATH."
+        echo ""
+        echo "Install $OCI_RUNTIME on the host, then rerun:"
+        echo "  agentic-researcher --$OCI_RUNTIME --build"
+        exit 1
+    fi
+
+    first_char="${OCI_RUNTIME%${OCI_RUNTIME#?}}"
+    rest="${OCI_RUNTIME#?}"
+    first_char_upper="$(printf '%s' "$first_char" | tr '[:lower:]' '[:upper:]')"
+    runtime_name="${first_char_upper}${rest}"
+    echo "Building ${runtime_name} container..."
+    if [[ "$OCI_RUNTIME" == "podman" ]]; then
+        "$OCI_RUNTIME" build --format docker -t agentic-researcher:latest "$SCRIPT_DIR"
+    else
+        "$OCI_RUNTIME" build -t agentic-researcher:latest "$SCRIPT_DIR"
+    fi
     echo ""
-    echo "Docker image built: agentic-researcher:latest"
+    echo "${runtime_name} image built: agentic-researcher:latest"
 else
     if [[ "$(uname -s)" != "Linux" ]]; then
         echo "Error: Apptainer builds are only supported on Linux hosts. Current host: $(uname -s)"

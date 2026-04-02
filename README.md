@@ -31,7 +31,7 @@ Supports [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](ht
 
 ## Prerequisites
 
-- **Docker** (default) or **Apptainer** (Linux only)
+- **Docker** (default), **Podman**, or **Apptainer** (Linux only)
 - An API key or OAuth login for your chosen CLI tool (see [supported tools](#supported-cli-tools))
 - GPU drivers installed on the host if you want GPU passthrough
 - Project dependencies managed with [uv](https://docs.astral.sh/uv/) (recommended) — the agent runs `uv sync` inside the sandbox
@@ -49,17 +49,20 @@ cd The-Agentic-Researcher
 # 3a. Build container for Docker (default)
 agentic-researcher --build
 
-# 3b. Build container for Apptainer (Linux only)
+# 3b. Build container for Podman
+agentic-researcher --podman --build
+
+# 3c. Build container for Apptainer (Linux only)
 agentic-researcher --apptainer --build
 ```
 
-Docker is the default runtime. By default the launcher stores state under `~/.cache/agentic-researcher` and launches Claude Code. Claude uses OAuth by default; other CLIs handle auth inside the tool, with standard API key env vars passed through if set.
+Docker is the default runtime when available. If Docker is not installed or not on `PATH`, but Podman is, the launcher and install script automatically fall back to Podman for OCI builds. Podman uses the same OCI image and launch flow as Docker, but runs through the `podman` CLI instead. When building with Podman, the build script requests Docker image format (`podman build --format docker`) so Dockerfile `SHELL` directives keep working and Podman avoids noisy OCI-format warnings. By default the launcher stores state under `~/.cache/agentic-researcher` and launches Claude Code. Claude uses OAuth by default; other CLIs handle auth inside the tool, with standard API key env vars passed through if set.
 
 ## Configuration
 
-Run `agentic-researcher --setup` to create a configuration file at `~/.config/agentic-researcher/config.sh`. The setup wizard lets you configure:
+Run `agentic-researcher --setup` to create a configuration file at `${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh`. The setup wizard lets you configure:
 
-- **Container runtime** — Docker or Apptainer
+- **Container runtime** — Docker, Podman, or Apptainer
 - **CLI tool** — Claude Code, OpenCode, Gemini CLI, or Codex CLI
 - **Authentication** — OAuth login or API key (with configurable env var name)
 - **Custom API endpoint** — point Claude at an Anthropic-compatible proxy or gateway
