@@ -57,7 +57,11 @@ def fake_bin(tmp_path: Path) -> Path:
 @pytest.fixture
 def base_env(fake_bin: Path, tmp_path: Path) -> dict[str, str]:
     env = os.environ.copy()
-    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    filtered_path = [
+        d for d in env["PATH"].split(":")
+        if not (Path(d) / "docker").exists()
+    ]
+    env["PATH"] = f"{fake_bin}:{':'.join(filtered_path)}"
     env["FAKE_PODMAN_LOG"] = str(tmp_path / "podman.log")
     env["FAKE_DOCKER_LOG"] = str(tmp_path / "docker.log")
     env["HOME"] = str(tmp_path / "home")
