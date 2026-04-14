@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://arxiv.org/abs/2603.15914"><strong>Paper</strong></a> &middot;
+  <a href="https://maxzimmer.org/the-agentic-researcher/"><strong>Project Page</strong></a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#workflow">Workflow</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
