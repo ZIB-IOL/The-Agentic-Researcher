@@ -475,9 +475,18 @@ setup_storage() {
         "$AR_CONFIG_STORE/.gemini/agents" \
         "$AR_CONFIG_STORE/.gemini/history" \
         "$AR_CONFIG_STORE/.gemini/tmp/bin" \
-        "$AR_CONFIG_STORE/.opencode/bin"
+        "$AR_CONFIG_STORE/.opencode/bin" \
+        "$AR_CONFIG_STORE/.ssh"
 
-    # Ensure claude.json exists (required for onboarding bypass)
+    # Pre-create placeholder files for nested file binds. On Docker/Podman the
+    # launcher bind-mounts $AR_CONFIG_STORE over /claude-home; any nested bind
+    # targets inside that dir (/claude-home/.gitconfig, /claude-home/.claude.json)
+    # must already exist on the host — rootless podman with --userns keep-id
+    # cannot create them at container-start time. These files stay empty and
+    # are shadowed by their respective binds at runtime.
+    touch "$AR_CONFIG_STORE/.gitconfig" "$AR_CONFIG_STORE/.claude.json"
+
+    # Ensure claude.json (bind source) exists with onboarding bypass.
     if [[ ! -f "$CLAUDE_JSON" ]]; then
         echo '{"hasCompletedOnboarding": true}' > "$CLAUDE_JSON"
     fi
@@ -1209,11 +1218,13 @@ launch_oci_runtime() {
         esac
     fi
 
-    # Extra bind dirs
+    # Extra bind dirs. The EXTRA_DIR_*_BIND arrays are built for Apptainer, where
+    # each mount is stored as two separate array elements ("--bind" and
+    # "host:container"). Skip the flag markers and pass only the spec to -v.
     for dir_bind in "${EXTRA_DIR_ROOT_BIND[@]}" "${EXTRA_DIR_BINDS[@]}"; do
         [[ -n "$dir_bind" ]] || continue
-        # Convert --bind X:Y to -v X:Y
-        OCI_ARGS+=(-v "${dir_bind#--bind }")
+        [[ "$dir_bind" == "--bind" ]] && continue
+        OCI_ARGS+=(-v "$dir_bind")
     done
 
     # Convert env args
