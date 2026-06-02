@@ -28,7 +28,7 @@
 
 The Agentic Researcher launches AI coding agents inside **sandboxed containers** with filesystem isolation, GPU support, and structured research instructions.
 
-Supports [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai), [Gemini CLI](https://github.com/google-gemini/gemini-cli), and [Codex CLI](https://github.com/openai/codex).
+Supports [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Codex CLI](https://github.com/openai/codex), and [pi](https://github.com/badlogic/pi-mono).
 
 ## Prerequisites
 
@@ -64,7 +64,7 @@ Docker is the default runtime when available. If Docker is not installed or not 
 Run `agentic-researcher --setup` to create a configuration file at `${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh`. The setup wizard lets you configure:
 
 - **Container runtime** — Docker, Podman, or Apptainer
-- **CLI tool** — Claude Code, OpenCode, Gemini CLI, or Codex CLI
+- **CLI tool** — Claude Code, OpenCode, Gemini CLI, Codex CLI, or pi
 - **Authentication** — OAuth login or API key (with configurable env var name)
 - **Custom API endpoint** — point Claude at an Anthropic-compatible proxy or gateway
 - **State/cache directory** (`AR_STATE_ROOT`) — where caches, container `/tmp`, and tool state are stored. Defaults to `~/.cache/agentic-researcher`. On HPC systems with Apptainer, set this to a path with sufficient space (e.g. on a scratch filesystem) to avoid hitting the default 64 MB overlay limit
@@ -110,6 +110,7 @@ Off by default. Requires Apptainer runtime and an active multi-node Slurm alloca
 | [OpenCode](https://opencode.ai) | `AGENTS.md` | Any (LiteLLM) | `--tool opencode` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `GEMINI.md` | Google | `--tool gemini` |
 | [Codex CLI](https://github.com/openai/codex) | `AGENTS.md` | OpenAI | `--tool codex` |
+| [pi](https://github.com/badlogic/pi-mono) | `AGENTS.md` | Any | `--tool pi` |
 
 ## Workflow
 

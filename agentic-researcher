@@ -158,6 +158,10 @@ apply_defaults() {
             AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
             AR_API_KEY_ENV="${AR_API_KEY_ENV:-OPENAI_API_KEY}"
             ;;
+        pi)
+            AR_AUTH_MODE="${AR_AUTH_MODE:-tool}"
+            AR_API_KEY_ENV="${AR_API_KEY_ENV:-ANTHROPIC_API_KEY}"
+            ;;
     esac
 }
 YOLO_MODE=false
@@ -216,7 +220,7 @@ parse_arguments() {
                 ;;
             --tool)
                 if [[ -z "${2:-}" || "$2" =~ ^- ]]; then
-                    echo "Error: --tool requires a value (claude|opencode|gemini|codex)"
+                    echo "Error: --tool requires a value (claude|opencode|gemini|codex|pi)"
                     exit 1
                 fi
                 AR_CLI_TOOL_OVERRIDE="$2"
@@ -295,7 +299,7 @@ Options:
   --test              Quick validation of sandbox environment
   --multi-node        Enable multi-node dispatch (Apptainer + Slurm only)
   --debug-launch      Print extra launcher details and enable tool startup logs where supported
-  --tool TOOL         Select CLI tool (claude|opencode|gemini|codex)
+  --tool TOOL         Select CLI tool (claude|opencode|gemini|codex|pi)
   --yolo              Auto-approve all permissions (Claude Code only)
   --resume [ID]       Resume a session (interactive picker, or specify ID)
   --continue, -c      Continue the most recent conversation
@@ -475,6 +479,7 @@ setup_storage() {
         "$AR_CONFIG_STORE/.gemini/agents" \
         "$AR_CONFIG_STORE/.gemini/history" \
         "$AR_CONFIG_STORE/.gemini/tmp/bin" \
+        "$AR_CONFIG_STORE/.pi/agent" \
         "$AR_CONFIG_STORE/.opencode/bin" \
         "$AR_CONFIG_STORE/.ssh"
 
@@ -511,7 +516,8 @@ setup_storage() {
     OPENCODE_DATA_DIR="$OPENCODE_STATE_DIR/data"
     GEMINI_STATE_DIR="$HOME/.gemini"
     CODEX_STATE_DIR="$HOME/.codex"
-    mkdir -p "$OPENCODE_CONFIG_DIR" "$OPENCODE_DATA_DIR" "$GEMINI_STATE_DIR" "$CODEX_STATE_DIR"
+    PI_STATE_DIR="$HOME/.pi"
+    mkdir -p "$OPENCODE_CONFIG_DIR" "$OPENCODE_DATA_DIR" "$GEMINI_STATE_DIR" "$CODEX_STATE_DIR" "$PI_STATE_DIR/agent"
 
     mkdir -p \
         "$GEMINI_STATE_DIR/commands" \
@@ -546,7 +552,7 @@ setup_instruction_file() {
         claude)
             target="CLAUDE.md"
             ;;
-        opencode|codex)
+        opencode|codex|pi)
             target="AGENTS.md"
             ;;
         gemini)
@@ -695,6 +701,50 @@ translate_tool_args() {
             fi
             if [[ "$YOLO_MODE" == "true" ]]; then
                 TOOL_ARGS+=("--full-auto")
+            fi
+            ;;
+        pi)
+            # Translate Claude-style flags to pi equivalents
+            local translated=()
+            local skip_next=false
+            for ((i=0; i<${#TOOL_ARGS[@]}; i++)); do
+                if [[ "$skip_next" == "true" ]]; then
+                    skip_next=false
+                    continue
+                fi
+                local arg="${TOOL_ARGS[$i]}"
+                case "$arg" in
+                    --dangerously-skip-permissions)
+                        echo "Warning: --yolo has no effect in pi mode (no permission system)"
+                        ;;
+                    --resume)
+                        # pi: bare --resume opens an interactive picker; --resume ID maps to --session ID
+                        local next="${TOOL_ARGS[$((i+1))]:-}"
+                        if [[ -n "$next" && ! "$next" =~ ^- ]]; then
+                            translated+=("--session" "$next")
+                            skip_next=true
+                        else
+                            translated+=("--resume")
+                        fi
+                        ;;
+                    --context)
+                        skip_next=true
+                        echo "Warning: --context not supported in pi"
+                        ;;
+                    *)
+                        translated+=("$arg")
+                        ;;
+                esac
+            done
+            TOOL_ARGS=("${translated[@]}")
+            if [[ "$MODEL_SPECIFIED" == "false" && -n "${AR_DEFAULT_MODEL:-}" ]]; then
+                TOOL_ARGS+=("--model" "$AR_DEFAULT_MODEL")
+            fi
+            if [[ "$DEBUG_LAUNCH" == "true" ]]; then
+                TOOL_ARGS+=("--verbose")
+            fi
+            if [[ "$YOLO_MODE" == "true" ]]; then
+                echo "Warning: --yolo has no effect in pi mode (no permission system)"
             fi
             ;;
     esac
@@ -1041,6 +1091,9 @@ build_env_args() {
         codex)
             ENV_ARGS+=(--env "SANDBOX_TOOL=codex")
             ;;
+        pi)
+            ENV_ARGS+=(--env "SANDBOX_TOOL=pi")
+            ;;
     esac
 
     # Extra user-defined environment variables (pipe-separated KEY=VALUE pairs)
@@ -1132,6 +1185,15 @@ launch_apptainer() {
         codex)
             if [[ -d "${CODEX_STATE_DIR:-}" ]]; then
                 BIND_ARGS+=(--bind "$CODEX_STATE_DIR:/claude-home/.codex")
+            fi
+            if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
+                BIND_ARGS+=(--bind "$SCRIPT_DIR/INSTRUCTIONS.md:/claude-home/.claude/INSTRUCTIONS.md.template:ro")
+            fi
+            ;;
+        pi)
+            # pi reads config/auth/sessions from ~/.pi/agent; bind the parent dir.
+            if [[ -d "${PI_STATE_DIR:-}" ]]; then
+                BIND_ARGS+=(--bind "$PI_STATE_DIR:/claude-home/.pi")
             fi
             if [[ -f "$SCRIPT_DIR/INSTRUCTIONS.md" ]]; then
                 BIND_ARGS+=(--bind "$SCRIPT_DIR/INSTRUCTIONS.md:/claude-home/.claude/INSTRUCTIONS.md.template:ro")
@@ -1372,7 +1434,8 @@ main() {
     # Tool-specific setup
     if [[ "$AR_CLI_TOOL" == "opencode" ]]; then
         setup_opencode
-    elif [[ "$AR_CLI_TOOL" == "codex" ]]; then
+    elif [[ "$AR_CLI_TOOL" == "codex" || "$AR_CLI_TOOL" == "pi" ]]; then
+        # Both Codex and pi auto-discover project skills under .agents/skills/.
         setup_codex_project_skills
     fi
 

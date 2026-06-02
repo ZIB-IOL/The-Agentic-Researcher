@@ -285,3 +285,70 @@ def test_install_script_auto_detects_podman_when_docker_is_absent(
     assert "Building Podman container" in result.stdout
     assert "build --format docker -t agentic-researcher:latest" in read_log(base_env["FAKE_PODMAN_LOG"])
     assert read_log(base_env["FAKE_DOCKER_LOG"]) == ""
+
+
+# ── pi (@earendil-works/pi-coding-agent) tool support ────────────────────
+
+def test_launcher_podman_runs_pi_tool(base_env: dict[str, str], tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+
+    result = run(
+        [str(AGENTIC_RESEARCHER), "--podman", "--tool", "pi", str(workspace)],
+        base_env,
+    )
+
+    assert result.returncode == 0
+    assert "Starting pi" in result.stdout
+    podman_log = read_log(base_env["FAKE_PODMAN_LOG"])
+    assert "run --rm" in podman_log
+    assert "SANDBOX_TOOL=pi" in podman_log
+    # pi reads AGENTS.md; the launcher must seed it into the workspace.
+    assert (workspace / "AGENTS.md").exists()
+    # pi auto-discovers project skills under .agents/skills/ (same as Codex).
+    for skill in ("setup_research_plan", "retro", "update_base"):
+        assert (workspace / ".agents" / "skills" / skill / "SKILL.md").exists()
+    assert read_log(base_env["FAKE_DOCKER_LOG"]) == ""
+
+
+def test_pi_translates_resume_to_session_and_warns_on_yolo(
+    base_env: dict[str, str], tmp_path: Path
+) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+
+    result = run(
+        [
+            str(AGENTIC_RESEARCHER),
+            "--podman",
+            "--tool",
+            "pi",
+            "--debug-launch",
+            "--resume",
+            "ABC123",
+            "--yolo",
+            str(workspace),
+        ],
+        base_env,
+    )
+
+    assert result.returncode == 0
+    # pi has no bare --resume ID; it maps to --session ID.
+    assert "--session ABC123" in result.stdout
+    # --debug-launch enables pi's verbose startup.
+    assert "--verbose" in result.stdout
+    # pi has no permission system, so --yolo is a no-op with a warning.
+    assert "--yolo has no effect in pi mode" in result.stdout
+
+
+def test_pi_apptainer_bind_and_config_store_wiring() -> None:
+    launcher_text = AGENTIC_RESEARCHER.read_text()
+    # Apptainer path binds the host pi config dir (~/.pi) into the sandbox.
+    assert 'BIND_ARGS+=(--bind "$PI_STATE_DIR:/claude-home/.pi")' in launcher_text
+    assert 'PI_STATE_DIR="$HOME/.pi"' in launcher_text
+    # Docker/Podman path seeds the per-tool dir inside the single config store.
+    assert '"$AR_CONFIG_STORE/.pi/agent"' in launcher_text
+    # pi uses AGENTS.md as its instruction file.
+    assert "opencode|codex|pi)" in launcher_text
+    # pi shares Codex's project-skill setup (rendered into .agents/skills/).
+    assert '"$AR_CLI_TOOL" == "codex" || "$AR_CLI_TOOL" == "pi"' in launcher_text

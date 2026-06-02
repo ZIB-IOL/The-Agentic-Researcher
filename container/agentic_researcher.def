@@ -75,6 +75,7 @@ From: ubuntu:22.04
         "opencode-ai" \
         "@google/gemini-cli" \
         "@openai/codex" \
+        "@earendil-works/pi-coding-agent" \
         && npm cache clean --force
 
     # Cleanup
@@ -94,6 +95,7 @@ From: ubuntu:22.04
     ln -sf /usr/local/bin/claude "$HOME/.local/bin/claude" 2>/dev/null
     ln -sf /usr/local/bin/gemini "$HOME/.local/bin/gemini" 2>/dev/null
     ln -sf /usr/local/bin/codex "$HOME/.local/bin/codex" 2>/dev/null
+    ln -sf /usr/local/bin/pi "$HOME/.local/bin/pi" 2>/dev/null
     mkdir -p "$HOME/.opencode/bin" 2>/dev/null
     ln -sf /usr/local/bin/opencode "$HOME/.opencode/bin/opencode" 2>/dev/null
 
@@ -103,6 +105,7 @@ From: ubuntu:22.04
         opencode) exec opencode "$@" ;;
         gemini)   exec gemini "$@" ;;
         codex)    exec codex "$@" ;;
+        pi)       exec pi "$@" ;;
         *)        echo "Unknown tool: $SANDBOX_TOOL"; exit 1 ;;
     esac
 
@@ -125,6 +128,7 @@ From: ubuntu:22.04
         "$HOME/.gemini/history" \
         "$HOME/.gemini/tmp/bin" \
         "$HOME/.codex" \
+        "$HOME/.pi/agent" \
         "$HOME/.opencode/bin" \
         "$HOME/.claude"
     printf '{\n  "projects": {}\n}\n' > "$HOME/.gemini/projects.json"
@@ -132,11 +136,13 @@ From: ubuntu:22.04
     ln -sf /usr/local/bin/claude "$HOME/.local/bin/claude"
     ln -sf /usr/local/bin/gemini "$HOME/.local/bin/gemini"
     ln -sf /usr/local/bin/codex "$HOME/.local/bin/codex"
+    ln -sf /usr/local/bin/pi "$HOME/.local/bin/pi"
     ln -sf /usr/local/bin/opencode "$HOME/.opencode/bin/opencode"
     claude --version
     opencode --version
     gemini --version
     codex --version
+    pi --version
     uv --version
     git --version
     gh --version

@@ -25,7 +25,7 @@ AR_CUSTOM_ENDPOINT=""
 # For openai-compatible providers: Anthropic SDK endpoint (used by Claude Code)
 AR_CUSTOM_ANTHROPIC_ENDPOINT=""
 
-# CLI tool: claude | opencode | gemini | codex
+# CLI tool: claude | opencode | gemini | codex | pi
 AR_CLI_TOOL="claude"
 
 # Default model passed to the CLI tool (tool-specific)

@@ -143,6 +143,7 @@ echo "  1) claude    (Claude Code — default)"
 echo "  2) opencode  (OpenCode — open-source, any LLM)"
 echo "  3) gemini    (Gemini CLI — Google)"
 echo "  4) codex     (Codex CLI — OpenAI)"
+echo "  5) pi        (pi — any provider)"
 echo ""
 read -rp "Select [1]: " tool_choice
 case "${tool_choice:-1}" in
@@ -169,6 +170,13 @@ case "${tool_choice:-1}" in
         ;;
     4)
         AR_CLI_TOOL=codex
+        AR_DEFAULT_MODEL_DEFAULT=""
+        AR_AUTH_MODE=tool
+        AR_API_PROVIDER=""
+        AR_API_KEY_ENV=""
+        ;;
+    5)
+        AR_CLI_TOOL=pi
         AR_DEFAULT_MODEL_DEFAULT=""
         AR_AUTH_MODE=tool
         AR_API_PROVIDER=""
@@ -252,7 +260,7 @@ AR_API_KEY_ENV="$AR_API_KEY_ENV"
 AR_CUSTOM_ENDPOINT="$AR_CUSTOM_ENDPOINT"
 AR_CUSTOM_ANTHROPIC_ENDPOINT="$AR_CUSTOM_ANTHROPIC_ENDPOINT"
 
-# CLI tool: claude | opencode | gemini | codex
+# CLI tool: claude | opencode | gemini | codex | pi
 AR_CLI_TOOL="$AR_CLI_TOOL"
 
 # Default model
