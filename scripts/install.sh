@@ -45,7 +45,7 @@ Options:
   --repo-url URL      Git repository to clone for bootstrap installs
   --ref NAME          Git branch or tag to clone for bootstrap installs
   --runtime NAME      Default runtime in generated config (docker|podman|apptainer)
-  --tool NAME         Default tool in generated config (claude|opencode|gemini|codex)
+  --tool NAME         Default tool in generated config (claude|opencode|gemini|codex|pi)
   --state-root DIR    State/cache root in generated config
   --write-config      Write ${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh
   --build             Build the selected container after install
@@ -131,7 +131,7 @@ case "$RUNTIME" in
 esac
 
 case "$TOOL" in
-    claude|opencode|gemini|codex) ;;
+    claude|opencode|gemini|codex|pi) ;;
     *)
         echo "Error: Unsupported tool: $TOOL" >&2
         exit 1
@@ -218,6 +218,12 @@ write_config() {
             auth_mode="tool"
             api_provider=""
             api_key_env=""
+            default_model=""
+            ;;
+        pi)
+            auth_mode="tool"
+            api_provider=""
+            api_key_env="ANTHROPIC_API_KEY"
             default_model=""
             ;;
     esac
