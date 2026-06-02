@@ -31,6 +31,8 @@ prepare_home_layout_for_user() {
         /claude-home/.gemini/tmp
         /claude-home/.gemini/tmp/bin
         /claude-home/.codex
+        /claude-home/.pi
+        /claude-home/.pi/agent
         /claude-home/.opencode
         /claude-home/.opencode/bin
     )
@@ -107,6 +109,7 @@ setup_home_layout() {
         "$HOME/.gemini/tmp/bin" \
         "$HOME/.gemini" \
         "$HOME/.codex" \
+        "$HOME/.pi/agent" \
         "$HOME/.opencode/bin" 2>/dev/null
 
     if [[ ! -f "$HOME/.gemini/projects.json" ]]; then
@@ -140,6 +143,7 @@ link_tool_binary claude "$HOME/.local/bin/claude"
 link_tool_binary opencode "$HOME/.opencode/bin/opencode"
 link_tool_binary gemini "$HOME/.local/bin/gemini"
 link_tool_binary codex "$HOME/.local/bin/codex"
+link_tool_binary pi "$HOME/.local/bin/pi"
 
 # Multi-tool dispatch: check SANDBOX_TOOL env var
 case "${SANDBOX_TOOL:-claude}" in
@@ -147,5 +151,6 @@ case "${SANDBOX_TOOL:-claude}" in
     opencode) exec opencode "$@" ;;
     gemini)   exec gemini "$@" ;;
     codex)    exec codex "$@" ;;
+    pi)       exec pi "$@" ;;
     *)        echo "Unknown tool: $SANDBOX_TOOL"; exit 1 ;;
 esac

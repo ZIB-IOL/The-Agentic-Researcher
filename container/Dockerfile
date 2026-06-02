@@ -74,6 +74,7 @@ RUN npm install -g \
         "opencode-ai" \
         "@google/gemini-cli" \
         "@openai/codex" \
+        "@earendil-works/pi-coding-agent" \
     && npm cache clean --force
 
 ENV PATH="/opt/node/bin:/usr/local/bin:$PATH"
