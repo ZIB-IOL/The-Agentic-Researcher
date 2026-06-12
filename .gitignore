@@ -33,6 +33,7 @@ config/opencode_config.json
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+QWEN.md
 
 # Hive-One docs
 HIVE-ONE-PUBLIC.md

@@ -6,7 +6,7 @@ You need to update the project's instruction file with the latest base template 
 
 ## Steps
 
-1. **Read** the latest base template from `/claude-home/.claude/INSTRUCTIONS.md.template`
+1. **Read** the latest base template from `~/.claude/INSTRUCTIONS.md.template`
 2. **Detect** which instruction file exists in the workspace (check `CLAUDE.md`, `GEMINI.md`, `AGENTS.md` in order). Use the first one found as `$INSTRUCTION_FILE`.
 3. **Read** the current project file at `/workspace/$INSTRUCTION_FILE`
 4. **Extract** from the current file: everything starting from `## 8. Project Instructions` (inclusive) to the end of the file. This is the project-specific content that must be preserved exactly as-is.

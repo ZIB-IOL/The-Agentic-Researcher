@@ -22,7 +22,7 @@ Usage:
 Options:
   --install-dir DIR  Remove checkout from DIR
   --bin-dir DIR      Remove symlink from DIR
-  --keep-state       Keep config, local state, and docker image
+  --keep-state       Keep config and the persistent store
   --yes              Skip confirmation prompt
   --help             Show this help
 EOF
@@ -73,9 +73,9 @@ echo "Uninstall plan:"
 echo "  Launcher symlink: $LINK_PATH"
 echo "  Install dir:      $INSTALL_DIR"
 if [[ "$PURGE" == "true" ]]; then
-    echo "  Purge:            config + state + docker image"
+    echo "  Purge:            config + persistent store"
 else
-    echo "  Purge:            no (keeping config + state + docker image)"
+    echo "  Purge:            no (keeping config + persistent store)"
 fi
 echo ""
 

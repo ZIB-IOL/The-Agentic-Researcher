@@ -3,42 +3,86 @@
 #
 # Location: ${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh
 # Edit individual settings:  agentic-researcher --setup KEY=VALUE
+# Environment variables with the same names override these values.
 
-# Container runtime: apptainer | docker | podman
-AR_CONTAINER_RUNTIME="apptainer"
+# Container runtime: docker | podman
+# (Apptainer support is planned - see TODO.md)
+AR_CONTAINER_RUNTIME="docker"
 
-# Authentication: oauth | tool | api-key
-# oauth: Claude Code handles login interactively
-# tool:  the CLI handles auth inside the container; standard key env vars are passed through
-# api-key: launcher validates AR_API_KEY_ENV before launch (mainly useful for Claude)
-AR_AUTH_MODE="oauth"
-
-# Optional provider metadata for advanced/custom setups
-AR_API_PROVIDER="anthropic"
-
-# Optional env var name for launcher-managed API key validation
-AR_API_KEY_ENV="ANTHROPIC_API_KEY"
-
-# For openai-compatible providers: base URL for OpenAI-compatible endpoint
-AR_CUSTOM_ENDPOINT=""
-
-# For openai-compatible providers: Anthropic SDK endpoint (used by Claude Code)
-AR_CUSTOM_ANTHROPIC_ENDPOINT=""
-
-# CLI tool: claude | opencode | gemini | codex | pi
+# CLI tool: claude | opencode | gemini | codex | qwen | pi | bash
 AR_CLI_TOOL="claude"
 
 # Default model passed to the CLI tool (tool-specific)
 AR_DEFAULT_MODEL="sonnet"
 
+# Authentication: oauth | tool | api-key
+# oauth:   Claude Code handles login interactively (state persists in the store)
+# tool:    the CLI handles auth inside the container; standard key env vars
+#          (ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, GEMINI_API_KEY)
+#          are passed through from the host environment if set
+# api-key: launcher validates AR_API_KEY_ENV before launch (mainly for Claude)
+AR_AUTH_MODE="oauth"
+
+# Optional provider metadata for advanced/custom setups
+AR_API_PROVIDER="anthropic"
+
+# Env var name holding the API key (validated in api-key mode; also used as
+# the key source for AR_CUSTOM_ENDPOINT)
+AR_API_KEY_ENV="ANTHROPIC_API_KEY"
+
+# Generic OpenAI-compatible endpoint (opencode/pi/codex). When set:
+#   - codex gets a custom model provider pointing at this URL
+#   - opencode/pi get a config rendered from config/*.template.json
+#     (copy a template into this config directory to customize, e.g. the
+#     model list; the API key is passed via env, never written to disk)
+AR_CUSTOM_ENDPOINT=""
+
+# Anthropic-compatible endpoint for Claude Code (api-key mode only)
+AR_CUSTOM_ANTHROPIC_ENDPOINT=""
+
 # HTTP(S) proxy (leave empty if not needed)
 AR_HTTPS_PROXY=""
 AR_HTTP_PROXY=""
 
-# Base directory for local state, caches, and container temp data
+# Persistent store: all CLI tools, runtimes, caches, and the agent home live
+# here (mounted at /ar-store in the container). Survives container exits.
+# On hosts with small/slow home directories, point this at scratch storage.
 AR_STATE_ROOT="$HOME/.cache/agentic-researcher"
 
-# Additional directories to bind into the sandbox (colon-separated)
-# Accepts commas or spaces too — they get normalized to colons
-# Inside the container they appear under /workspace/.mount/<basename>
-AR_EXTRA_BIND_DIRS=""
+# Base container image (empty = node:24-bookworm, or the GPU image when GPUs
+# are active). Tools are installed at runtime; no custom image is built.
+AR_IMAGE=""
+
+# GPU passthrough: auto | all | none  (Docker only)
+# auto enables GPUs when nvidia-smi is present on a Linux host.
+AR_DOCKER_GPUS="auto"
+
+# CUDA base image used when GPUs are active and AR_IMAGE is empty
+AR_GPU_IMAGE="nvidia/cuda:13.1.1-cudnn-devel-ubuntu22.04"
+
+# Tool updates: auto (default) | never
+# auto converges the store toward the latest tool versions on each start,
+# using a version cache (AR_UPDATE_TTL seconds, default 21600 = 6h).
+AR_UPDATE="auto"
+AR_UPDATE_TTL=""
+
+# Supply-chain cooldown exemptions: comma-separated tool labels allowed to
+# bypass the 7-day minimum release age (labels: npm, gemini, opencode, codex,
+# qwen, pi). Example: AR_NO_COOLDOWN="pi,opencode"
+AR_NO_COOLDOWN=""
+
+# Extra environment variables forwarded into the container
+# (pipe-separated KEY=VALUE pairs, e.g. "HF_TOKEN=hf_...|WANDB_API_KEY=...")
+AR_EXTRA_ENV=""
+
+# Unsafe mode: allow apt-get/system operations; the agent runs as root
+# (files created in /workspace will be root-owned on Linux)
+AR_UNSAFE="0"
+
+# Lockdown mode: extra hardening (read-only rootfs, tmpfs /tmp, pids limit).
+# Automatically disabled in GPU and unsafe modes.
+AR_LOCKDOWN="0"
+
+# Ephemeral mode: use a throwaway store in $TMPDIR, removed when the session
+# ends. Every run is a cold install; useful for untrusted one-offs and HPC jobs.
+AR_EPHEMERAL="0"

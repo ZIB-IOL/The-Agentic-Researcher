@@ -44,19 +44,18 @@ Options:
   --bin-dir DIR       Create launcher symlink in DIR
   --repo-url URL      Git repository to clone for bootstrap installs
   --ref NAME          Git branch or tag to clone for bootstrap installs
-  --runtime NAME      Default runtime in generated config (docker|podman|apptainer)
-  --tool NAME         Default tool in generated config (claude|opencode|gemini|codex|pi)
-  --state-root DIR    State/cache root in generated config
+  --runtime NAME      Default runtime in generated config (docker|podman)
+  --tool NAME         Default tool in generated config (claude|opencode|gemini|codex|qwen|pi)
+  --state-root DIR    Persistent store root in generated config
   --write-config      Write ${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh
-  --build             Build the selected container after install
+  --build             Prewarm the persistent store after install
   --force             Overwrite existing install and symlink
   --help              Show this help
 
 Examples:
   ./scripts/install.sh
   ./scripts/install.sh --write-config --build
-  ./scripts/install.sh --runtime apptainer --tool codex --write-config
-  ./scripts/install.sh --runtime podman --write-config --build
+  ./scripts/install.sh --runtime podman --tool codex --write-config
 EOF
 }
 
@@ -123,7 +122,11 @@ if [[ -z "$RUNTIME" ]]; then
 fi
 
 case "$RUNTIME" in
-    docker|podman|apptainer) ;;
+    docker|podman) ;;
+    apptainer)
+        echo "Error: the Apptainer runtime is not yet supported in v2 (see TODO.md)." >&2
+        exit 1
+        ;;
     *)
         echo "Error: Unsupported runtime: $RUNTIME" >&2
         exit 1
@@ -131,7 +134,7 @@ case "$RUNTIME" in
 esac
 
 case "$TOOL" in
-    claude|opencode|gemini|codex|pi) ;;
+    claude|opencode|gemini|codex|qwen|pi) ;;
     *)
         echo "Error: Unsupported tool: $TOOL" >&2
         exit 1
@@ -165,6 +168,7 @@ stage_local_checkout() {
         --exclude='.git' \
         --exclude='.venv' \
         --exclude='__pycache__' \
+        --exclude='.pytest_cache' \
         -cf - . | tar -C "$INSTALL_DIR" -xf -
     local install_commit=""
     if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse HEAD >/dev/null 2>&1; then
@@ -205,19 +209,25 @@ write_config() {
         opencode)
             auth_mode="tool"
             api_provider=""
-            api_key_env=""
+            api_key_env="OPENAI_API_KEY"
             default_model=""
             ;;
         gemini)
             auth_mode="tool"
             api_provider=""
-            api_key_env=""
+            api_key_env="GEMINI_API_KEY"
             default_model=""
             ;;
         codex)
             auth_mode="tool"
             api_provider=""
-            api_key_env=""
+            api_key_env="OPENAI_API_KEY"
+            default_model=""
+            ;;
+        qwen)
+            auth_mode="tool"
+            api_provider=""
+            api_key_env="OPENAI_API_KEY"
             default_model=""
             ;;
         pi)
@@ -242,7 +252,9 @@ AR_DEFAULT_MODEL="$default_model"
 AR_HTTPS_PROXY=""
 AR_HTTP_PROXY=""
 AR_STATE_ROOT="$STATE_ROOT"
-AR_EXTRA_BIND_DIRS=""
+AR_UPDATE="auto"
+AR_NO_COOLDOWN=""
+AR_EXTRA_ENV=""
 EOF
 }
 
@@ -284,11 +296,7 @@ print_path_hint() {
 
 run_build() {
     local launcher="$BIN_DIR/agentic-researcher"
-    if [[ "$RUNTIME" == "docker" || "$RUNTIME" == "podman" ]]; then
-        "$launcher" --"$RUNTIME" --build
-    else
-        "$launcher" --apptainer --build
-    fi
+    "$launcher" --"$RUNTIME" --build
 }
 
 if is_local_checkout; then
@@ -308,11 +316,11 @@ print_path_hint
 
 if [[ "$BUILD_IMAGE" == "true" ]]; then
     echo ""
-    echo "Building container..."
+    echo "Prewarming the persistent store..."
     run_build
 fi
 
 echo ""
 echo "Next steps:"
-echo "  1. Build the container: agentic-researcher --build"
-echo "  2. Start the agent:     agentic-researcher ~/your-project"
+echo "  1. (Optional) Prewarm the tool store: agentic-researcher --build"
+echo "  2. Start the agent:                   agentic-researcher ~/your-project"

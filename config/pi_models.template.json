@@ -1,0 +1,15 @@
+{
+  "providers": {
+    "custom": {
+      "name": "Custom Provider",
+      "baseUrl": "__AR_CUSTOM_ENDPOINT__",
+      "api": "openai-completions",
+      "apiKey": "$AR_CUSTOM_API_KEY",
+      "models": [
+        {
+          "id": "__AR_DEFAULT_MODEL__"
+        }
+      ]
+    }
+  }
+}

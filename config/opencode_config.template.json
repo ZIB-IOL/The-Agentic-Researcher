@@ -7,15 +7,15 @@
       "name": "Custom Provider",
       "options": {
         "baseURL": "__AR_CUSTOM_ENDPOINT__",
-        "apiKey": "__AR_API_KEY__"
+        "apiKey": "{env:AR_CUSTOM_API_KEY}"
       },
       "models": {
-        "custom/default": {
-          "name": "Default Model"
+        "__AR_DEFAULT_MODEL__": {
+          "name": "__AR_DEFAULT_MODEL__"
         }
       }
     }
   },
-  "model": "custom/default",
+  "model": "custom/__AR_DEFAULT_MODEL__",
   "theme": "catppuccin"
 }
