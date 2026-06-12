@@ -4,6 +4,9 @@ PTY wrapper to allocate a pseudo-TTY for Apptainer containers.
 This solves the issue where interactive applications like Claude Code
 need raw mode on stdin, which requires a proper TTY.
 
+NOTE (v2): the Apptainer runtime is not yet supported in v2; this wrapper is
+kept for the planned re-introduction of Apptainer/HPC support (see TODO.md).
+
 Features:
   - Non-blocking I/O on master PTY (prevents hangs when child stops reading)
   - Forwards SIGINT/SIGTERM/SIGHUP to child process

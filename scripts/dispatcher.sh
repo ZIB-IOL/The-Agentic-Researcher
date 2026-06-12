@@ -6,6 +6,9 @@
 # Started by the agentic-researcher launcher (--multi-node) before launching
 # the container. Killed automatically when the container exits.
 #
+# NOTE (v2): multi-node dispatch requires the Apptainer runtime, which is not
+# yet supported in v2 - this script is currently gated off (see TODO.md).
+#
 # Usage: dispatcher.sh <dispatch-config-file>
 #
 

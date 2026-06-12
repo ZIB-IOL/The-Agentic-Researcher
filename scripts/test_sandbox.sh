@@ -27,7 +27,7 @@ warn() {
 
 # --- CLI Tools ---
 echo "=== CLI Tools ==="
-for tool in claude opencode gemini codex uv git gh jq rg yq python3; do
+for tool in claude opencode gemini codex qwen pi uv git gh jq rg yq julia bun chktex rsync python3; do
     if command -v "$tool" &>/dev/null; then
         pass "$tool found ($(command -v "$tool"))"
     else
@@ -61,10 +61,18 @@ else
     fail "/workspace is not writable"
 fi
 
-if [[ "$HOME" == "/claude-home" ]]; then
-    pass "HOME is /claude-home"
+if [[ "$HOME" == "/ar-store/home" ]]; then
+    pass "HOME is /ar-store/home"
 else
-    fail "HOME is '$HOME' (expected /claude-home)"
+    fail "HOME is '$HOME' (expected /ar-store/home)"
+fi
+
+STOREFILE="/ar-store/.sandbox_test_$$"
+if touch "$STOREFILE" 2>/dev/null; then
+    pass "/ar-store is writable"
+    rm -f "$STOREFILE"
+else
+    fail "/ar-store is not writable"
 fi
 
 TMPFILE="/tmp/.sandbox_test_$$"
@@ -107,13 +115,15 @@ case "$ACTIVE_TOOL" in
     claude)
         if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
             pass "ANTHROPIC_API_KEY is set"
+        elif [[ -f "$HOME/.claude/.credentials.json" ]]; then
+            pass "Claude OAuth credentials present in the store"
         else
-            fail "ANTHROPIC_API_KEY is not set"
+            warn "No ANTHROPIC_API_KEY and no OAuth session yet (login on first launch)"
         fi
         ;;
     opencode)
         if [[ -f "$HOME/.config/opencode/opencode.json" ]]; then
-            pass "OpenCode config file is mounted"
+            pass "OpenCode config file present"
         else
             warn "OpenCode config file not found (may use defaults)"
         fi
@@ -122,7 +132,7 @@ case "$ACTIVE_TOOL" in
         if [[ -n "${GOOGLE_API_KEY:-}" || -n "${GEMINI_API_KEY:-}" ]]; then
             pass "Google/Gemini API key is set"
         else
-            fail "GOOGLE_API_KEY or GEMINI_API_KEY is not set"
+            warn "GOOGLE_API_KEY or GEMINI_API_KEY not set (OAuth login on first launch)"
         fi
         ;;
     codex)
@@ -132,6 +142,20 @@ case "$ACTIVE_TOOL" in
             pass "Codex login session is available"
         else
             fail "OPENAI_API_KEY is not set and no Codex login session is available"
+        fi
+        ;;
+    qwen)
+        if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+            pass "OPENAI_API_KEY is set"
+        else
+            warn "OPENAI_API_KEY not set (OAuth login on first launch)"
+        fi
+        ;;
+    pi)
+        if [[ -n "${ANTHROPIC_API_KEY:-}" || -n "${OPENAI_API_KEY:-}" || -f "$HOME/.pi/agent/models.json" ]]; then
+            pass "pi has a key or a models.json config"
+        else
+            warn "No API key and no models.json for pi yet"
         fi
         ;;
 esac

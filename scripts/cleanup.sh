@@ -8,7 +8,6 @@ set -euo pipefail
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher"
 CONFIG_FILE="$CONFIG_DIR/config.sh"
 REMOVE_CONFIG=false
-REMOVE_IMAGE=false
 ASSUME_YES=false
 
 show_help() {
@@ -19,14 +18,16 @@ Usage:
 Options:
   --yes             Skip confirmation prompt
   --include-config  Also remove ${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh
-  --include-image   Also remove agentic-researcher:latest from Docker/Podman if available
-  --all             Equivalent to --include-config --include-image
+  --all             Equivalent to --include-config
   --help            Show this help
 
 Default behavior:
-  Removes only launcher-managed local state under the configured state root.
+  Removes only the launcher-managed persistent store (AR_STATE_ROOT): all
+  installed CLI tools, runtimes, caches, and the agent home. Tools are
+  reinstalled automatically on the next launch.
   Does not remove project files.
-  Does not remove container images unless explicitly requested.
+  Does not remove stock base images (node:24-bookworm etc.) - they may be
+  shared with other uses; remove manually via 'docker image rm' if desired.
 EOF
 }
 
@@ -38,12 +39,8 @@ while [[ $# -gt 0 ]]; do
         --include-config)
             REMOVE_CONFIG=true
             ;;
-        --include-image)
-            REMOVE_IMAGE=true
-            ;;
         --all)
             REMOVE_CONFIG=true
-            REMOVE_IMAGE=true
             ;;
         --help|-h)
             show_help
@@ -81,16 +78,11 @@ case "$STATE_ROOT" in
 esac
 
 echo "Cleanup plan:"
-echo "  State root:    $STATE_ROOT"
+echo "  Store (state root):  $STATE_ROOT"
 if [[ "$REMOVE_CONFIG" == "true" ]]; then
-    echo "  Config file:   $CONFIG_FILE"
+    echo "  Config file:         $CONFIG_FILE"
 else
-    echo "  Config file:   keep"
-fi
-if [[ "$REMOVE_IMAGE" == "true" ]]; then
-    echo "  OCI image:     agentic-researcher:latest"
-else
-    echo "  OCI image:     keep"
+    echo "  Config file:         keep"
 fi
 echo ""
 echo "Project files are not touched."
@@ -106,9 +98,9 @@ fi
 
 if [[ -d "$STATE_ROOT" ]]; then
     rm -rf "$STATE_ROOT"
-    echo "Removed state root: $STATE_ROOT"
+    echo "Removed store: $STATE_ROOT"
 else
-    echo "State root not present: $STATE_ROOT"
+    echo "Store not present: $STATE_ROOT"
 fi
 
 if [[ "$REMOVE_CONFIG" == "true" ]]; then
@@ -120,26 +112,5 @@ if [[ "$REMOVE_CONFIG" == "true" ]]; then
     fi
     if [[ -d "$CONFIG_DIR" ]]; then
         rmdir "$CONFIG_DIR" 2>/dev/null || true
-    fi
-fi
-
-if [[ "$REMOVE_IMAGE" == "true" ]]; then
-    removed_any=false
-    for runtime in docker podman; do
-        if command -v "$runtime" >/dev/null 2>&1; then
-            if "$runtime" image inspect agentic-researcher:latest >/dev/null 2>&1; then
-                if "$runtime" image rm agentic-researcher:latest >/dev/null 2>&1; then
-                    echo "Removed $runtime image: agentic-researcher:latest"
-                    removed_any=true
-                else
-                    echo "$runtime image could not be removed: agentic-researcher:latest"
-                fi
-            else
-                echo "$runtime image not present: agentic-researcher:latest"
-            fi
-        fi
-    done
-    if [[ "$removed_any" != "true" ]] && ! command -v docker >/dev/null 2>&1 && ! command -v podman >/dev/null 2>&1; then
-        echo "Neither Docker nor Podman is available; skipped image cleanup."
     fi
 fi

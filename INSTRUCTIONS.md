@@ -20,8 +20,7 @@ Project Instructions at the end of this document.
 | Path | Access | Contents |
 |------|--------|----------|
 | `/workspace` | read-write | Your project (working directory) |
-| `/claude-home` | isolated | Home directory (`.ssh`, `.gitconfig`, `.claude`) |
-| runtime-provided writable dirs | read-write | Optional cache/data locations exposed by the launcher or environment |
+| `/ar-store` | read-write | Persistent tool store: home directory (`/ar-store/home`), runtimes, caches |
 
 Everything else (host home, other projects, system files) is inaccessible.
 

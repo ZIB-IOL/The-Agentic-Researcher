@@ -28,11 +28,13 @@
 
 The Agentic Researcher launches AI coding agents inside **sandboxed containers** with filesystem isolation, GPU support, and structured research instructions.
 
-Supports [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Codex CLI](https://github.com/openai/codex), and [pi](https://github.com/badlogic/pi-mono).
+Supports [Claude Code](https://github.com/anthropics/claude-code), [OpenCode](https://opencode.ai), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Codex CLI](https://github.com/openai/codex), [Qwen Code](https://github.com/QwenLM/qwen-code), and [pi](https://github.com/badlogic/pi-mono).
+
+**No image builds.** Containers start from a stock base image (`node:24-bookworm`, or a CUDA image when GPUs are active). All CLI tools, runtimes, and utilities are installed at runtime into a **persistent store** on the host (`AR_STATE_ROOT`, mounted at `/ar-store`) and reused across sessions. The container is throwaway; the store is the system of record.
 
 ## Prerequisites
 
-- **Docker** (default), **Podman**, or **Apptainer** (Linux only)
+- **Docker** (default) or **Podman** (Apptainer support is planned — see `TODO.md`)
 - An API key or OAuth login for your chosen CLI tool (see [supported tools](#supported-cli-tools))
 - GPU drivers installed on the host if you want GPU passthrough
 - Project dependencies managed with [uv](https://docs.astral.sh/uv/) (recommended) — the agent runs `uv sync` inside the sandbox
@@ -47,32 +49,31 @@ cd The-Agentic-Researcher
 # 2. Install
 ./scripts/install.sh
 
-# 3a. Build container for Docker (default)
+# 3. (Optional) Prewarm the tool store - otherwise the first launch installs everything
 agentic-researcher --build
 
-# 3b. Build container for Podman
-agentic-researcher --podman --build
-
-# 3c. Build container for Apptainer (Linux only)
-agentic-researcher --apptainer --build
+# 4. Launch from your project directory
+agentic-researcher
 ```
 
-Docker is the default runtime when available. If Docker is not installed or not on `PATH`, but Podman is, the launcher and install script automatically fall back to Podman for OCI builds. Podman uses the same OCI image and launch flow as Docker, but runs through the `podman` CLI instead. When building with Podman, the build script requests Docker image format (`podman build --format docker`) so Dockerfile `SHELL` directives keep working and Podman avoids noisy OCI-format warnings. By default the launcher stores state under `~/.cache/agentic-researcher` and launches Claude Code. Claude uses OAuth by default; other CLIs handle auth inside the tool, with standard API key env vars passed through if set.
+Docker is the default runtime when available; if only Podman is installed, the launcher falls back to it automatically (rootless Podman is supported via `--userns keep-id`). By default the launcher keeps the store under `~/.cache/agentic-researcher` and launches Claude Code. Claude uses OAuth by default (login state persists in the store); other CLIs handle auth inside the tool, with the standard key env vars (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`) passed through from your host environment if set.
+
+On first launch the entrypoint installs Claude Code, Gemini CLI, OpenCode, Codex, Qwen Code, pi, plus `bun`, `uv`, `julia`, `jq`, `yq`, `gh`, `git-lfs`, `ripgrep`, `rsync`, `tmux`, `micro`, and `chktex` into the store (a few minutes). Subsequent launches reuse the store and only check for updates (cached, 6h TTL; disable with `AR_UPDATE=never`).
 
 ## Configuration
 
 Run `agentic-researcher --setup` to create a configuration file at `${XDG_CONFIG_HOME:-$HOME/.config}/agentic-researcher/config.sh`. The setup wizard lets you configure:
 
-- **Container runtime** — Docker, Podman, or Apptainer
-- **CLI tool** — Claude Code, OpenCode, Gemini CLI, Codex CLI, or pi
+- **Container runtime** — Docker or Podman
+- **CLI tool** — Claude Code, OpenCode, Gemini CLI, Codex CLI, Qwen Code, or pi
 - **Authentication** — OAuth login or API key (with configurable env var name)
-- **Custom API endpoint** — point Claude at an Anthropic-compatible proxy or gateway
-- **State/cache directory** (`AR_STATE_ROOT`) — where caches, container `/tmp`, and tool state are stored. Defaults to `~/.cache/agentic-researcher`. On HPC systems with Apptainer, set this to a path with sufficient space (e.g. on a scratch filesystem) to avoid hitting the default 64 MB overlay limit
-- **Extra environment variables** (`AR_EXTRA_ENV`) — pipe-separated `KEY=VALUE` pairs forwarded into the container (e.g. `HF_TOKEN=hf_...|WANDB_API_KEY=...`)
+- **Custom endpoints** — `AR_CUSTOM_ANTHROPIC_ENDPOINT` points Claude at an Anthropic-compatible gateway; `AR_CUSTOM_ENDPOINT` configures a generic OpenAI-compatible endpoint for OpenCode/pi/Codex (OpenCode and pi get a config rendered from `config/*.template.json` — copy a template into the config directory to customize the model list; the API key travels via env var, never written to disk)
+- **Persistent store** (`AR_STATE_ROOT`) — where all tools, runtimes, caches, and the agent home live. Defaults to `~/.cache/agentic-researcher`; point it at scratch storage on hosts with small or slow home directories
 - **Network proxy** — HTTP/HTTPS proxy settings for use inside the container
-- **Extra bind directories** — additional host paths to mount into the sandbox
 
-You can re-run `--setup` at any time to update your configuration.
+Additional settings (see `config/config.example.sh`): `AR_IMAGE` / `AR_GPU_IMAGE` (base images), `AR_DOCKER_GPUS` (auto|all|none), `AR_UPDATE` / `AR_UPDATE_TTL` (tool update policy), `AR_NO_COOLDOWN` (supply-chain cooldown exemptions), `AR_EXTRA_ENV` (pipe-separated `KEY=VALUE` pairs forwarded into the container, e.g. `HF_TOKEN=hf_...|WANDB_API_KEY=...`), `AR_UNSAFE`, `AR_LOCKDOWN`, `AR_EPHEMERAL`.
+
+Environment variables with the same names override config file values per invocation. You can re-run `--setup` at any time to update your configuration.
 
 ## Usage
 
@@ -85,31 +86,39 @@ agentic-researcher ~/my-project
 
 # Use a different CLI tool
 agentic-researcher --tool gemini
+agentic-researcher --tool pi
 
 # Auto-approve all tool calls
 agentic-researcher --yolo
+
+# Plain shell inside the sandbox (all tools on PATH)
+agentic-researcher --tool bash
+
+# Shell into an already-running session
+agentic-researcher --shell
+
+# Validate the sandbox environment
+agentic-researcher --test
+
+# Show the resolved configuration (secrets redacted)
+agentic-researcher --print-env
+
+# Throwaway store: everything installed fresh, removed when the session ends
+agentic-researcher --ephemeral --tool bash
 ```
 
-### Multi-Node Dispatch (Slurm + Apptainer)
-
-For multi-node Slurm allocations, the `--multi-node` flag starts a dispatcher that lets the agent run experiments on remote nodes via the `remote-run` command inside the container:
-
-```bash
-get_gpu 2 2                          # Allocate 2 nodes × 2 GPUs
-agentic-researcher --multi-node      # Launch with dispatch support
-agentic-researcher --multi-node --test  # Validate setup without launching
-```
-
-Off by default. Requires Apptainer runtime and an active multi-node Slurm allocation. Single-node workflows are unaffected.
+> **Note:** Multi-node Slurm dispatch from v1 (Apptainer-based) is temporarily
+> unavailable in v2 and will return together with Apptainer support — see `TODO.md`.
 
 ## Supported CLI Tools
 
 | Tool | Instruction file | Provider | Flag |
 |------|-----------------|----------|------|
 | [Claude Code](https://github.com/anthropics/claude-code) | `CLAUDE.md` | Anthropic | `--tool claude` (default) |
-| [OpenCode](https://opencode.ai) | `AGENTS.md` | Any (LiteLLM) | `--tool opencode` |
+| [OpenCode](https://opencode.ai) | `AGENTS.md` | Any | `--tool opencode` |
 | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | `GEMINI.md` | Google | `--tool gemini` |
 | [Codex CLI](https://github.com/openai/codex) | `AGENTS.md` | OpenAI | `--tool codex` |
+| [Qwen Code](https://github.com/QwenLM/qwen-code) | `QWEN.md` | Alibaba | `--tool qwen` |
 | [pi](https://github.com/badlogic/pi-mono) | `AGENTS.md` | Any | `--tool pi` |
 
 ## Workflow
@@ -126,15 +135,35 @@ When you relaunch the sandbox on a project that already has filled-in instructio
 
 ## Architecture
 
+### Persistent store, ephemeral container
+
+There is no Dockerfile and no image registry. Every run starts from a stock
+upstream image; the entrypoint (`container/inner.sh`) inspects the persistent
+store mounted at `/ar-store` and converges it toward the expected toolset:
+anything installed and current is reused, anything missing or outdated is
+installed. Adding a tool means appending it to the entrypoint's install list —
+no rebuilds, no version skew. The agent's home directory (`/ar-store/home`)
+lives in the store, so tool state and OAuth logins persist across sessions.
+
 ### Sandbox
 
 | Layer | Details |
 |-------|---------|
-| **Filesystem isolation** | The agent can only access `/workspace`; extra directories from `AR_EXTRA_BIND_DIRS` are mounted under `/workspace/.mount/<basename>` |
-| **Namespace isolation** | Apptainer `--compat` enables user/mount namespaces |
+| **Filesystem isolation** | The agent can only access `/workspace` (your project) and `/ar-store` (the tool store). No SSH keys, no host home, no other projects |
+| **Capability hardening** | `--cap-drop=ALL` with a minimal add-back set; `--security-opt no-new-privileges`; optional `AR_LOCKDOWN=1` (read-only rootfs, tmpfs `/tmp`, pids limit) |
+| **Privilege drop** | Setup runs as root, then the CLI is exec'd as the host user via `setpriv` (Docker on Linux); rootless Podman maps the user via `--userns keep-id` |
+| **Supply-chain cooldown** | npm/bun/uv enforce a 7-day minimum release age, and npm blocks post-install scripts; exempt fast-moving tools via `AR_NO_COOLDOWN` |
 | **Path traversal protection** | Symlinks resolved; system directories blocked |
 
 `--yolo` auto-approves tool calls but does **not** weaken filesystem isolation.
+
+### GPU support
+
+With `AR_DOCKER_GPUS=auto` (default), GPUs are passed through (`--gpus all`)
+when `nvidia-smi` is present on a Linux host with Docker, and the base image
+switches to `AR_GPU_IMAGE` (CUDA + cuDNN). ML caches (`HF_HOME`,
+`TRITON_CACHE_DIR`, `WANDB_DIR`) point into the store so checkpoints and
+datasets never bloat the project tree.
 
 ### Research Agent Instructions
 

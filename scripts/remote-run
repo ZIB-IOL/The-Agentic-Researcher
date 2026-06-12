@@ -5,6 +5,9 @@
 # This script runs INSIDE the container. It communicates with the host-side
 # dispatcher by writing job files to a shared directory.
 #
+# NOTE (v2): multi-node dispatch requires the Apptainer runtime, which is not
+# yet supported in v2 - this script is currently gated off (see TODO.md).
+#
 # Usage:
 #   remote-run <node> [--gpus N] -- <command...>     Run command (foreground, waits)
 #   remote-run <node> [--gpus N] --bg -- <command...> Run command (background, returns job ID)

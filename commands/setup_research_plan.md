@@ -8,7 +8,7 @@ You are a research agent. This command sets up and executes a research project.
 Detect which instruction file exists in the workspace and use it throughout:
 - Check for: `CLAUDE.md`, `GEMINI.md`, `AGENTS.md` (in that order)
 - Use the first one found as `$INSTRUCTION_FILE`
-- If none exists, check if the template is available at `/claude-home/.claude/INSTRUCTIONS.md.template` and copy it to `CLAUDE.md`
+- If none exists, check if the template is available at `~/.claude/INSTRUCTIONS.md.template` and copy it to `CLAUDE.md`
 
 Check the state of `/workspace/$INSTRUCTION_FILE` to determine what to do.
 
