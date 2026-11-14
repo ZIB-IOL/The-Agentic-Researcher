@@ -29,7 +29,7 @@ RUN arch="$(dpkg --print-architecture)" \
         arm64) node_arch="arm64" ;; \
         *) echo "Unsupported architecture for Node.js: $arch" >&2; exit 1 ;; \
     esac \
-    && node_version="$(curl -fsSL https://nodejs.org/dist/index.json | jq -r --arg node_arch "$node_arch" 'map(select(.files | index("linux-" + $node_arch))) | .[0].version')" \
+    && node_version="$(curl -fsSL https://nodejs.org/dist/index.json | jq -r --arg node_arch "$node_arch" 'map(select(.lts != false and (.files | index("linux-" + $node_arch)))) | .[0].version')" \
     && curl -fsSL "https://nodejs.org/dist/${node_version}/node-${node_version}-linux-${node_arch}.tar.xz" -o /tmp/node.tar.xz \
     && mkdir -p /opt/node \
     && tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1 \
