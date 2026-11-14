@@ -40,7 +40,7 @@ From: ubuntu:22.04
             ;;
     esac
 
-    NODE_VERSION="$(curl -fsSL https://nodejs.org/dist/index.json | jq -r --arg node_arch "$node_arch" 'map(select(.files | index("linux-" + $node_arch))) | .[0].version')"
+    NODE_VERSION="$(curl -fsSL https://nodejs.org/dist/index.json | jq -r --arg node_arch "$node_arch" 'map(select(.lts != false and (.files | index("linux-" + $node_arch)))) | .[0].version')"
     curl -fsSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-${node_arch}.tar.xz" -o /tmp/node.tar.xz
     mkdir -p /opt/node
     tar --no-same-owner -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1
